@@ -324,6 +324,7 @@ namespace HumanTyper
         private KeyboardOut _kb;
         private bool _imeChinese;    // what we believe the target's IME mode is (Chinese / English)
         private string _commitKey = " ";
+        private bool _fixing;        // proofreading fixes are typed faster
 
         /// <summary>
         /// Types Chinese the way a person does on a real keyboard: pinyin letters into the IME,
@@ -350,7 +351,7 @@ namespace HumanTyper
             string py = Pinyin.Join(syllables);
             SetIme(true);
             int unsampledBefore = _unsampled;
-            double perLetter = chars * CjkBaseMs * 0.8 / Math.Max(1, py.Length);
+            double perLetter = chars * CjkBaseMs * (_fixing ? 0.45 : 0.8) / Math.Max(1, py.Length);
             for (int k = 0; k < py.Length; k++)
             {
                 string letter = py[k].ToString();
@@ -366,7 +367,7 @@ namespace HumanTyper
                 }
                 KeyRaw(letter);
             }
-            Wait(Rand(150, 550));     // look at the candidates
+            Wait(_fixing ? Rand(60, 160) : Rand(150, 550));     // look at the candidates
             KeyRaw(_commitKey);       // Space = top candidate; "2"/"3" = another one
             _unsampled = unsampledBefore + chars;
         }

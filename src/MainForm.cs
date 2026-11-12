@@ -192,7 +192,7 @@ namespace HumanTyper
                 "键盘扫描码（远程桌面 / 远控软件 / 虚拟机）",
                 "驱动级虚拟键盘（需安装 Interception 驱动）",
             });
-            _cboImeState = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80, Margin = new Padding(3, 4, 3, 3) };
+            _cboImeState = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 105, Margin = new Padding(3, 4, 3, 3) };
             _cboImeState.Items.AddRange(new object[] { "中文模式", "英文模式" });
             _cboImeToggle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100, Margin = new Padding(3, 4, 3, 3) };
             _cboImeToggle.Items.AddRange(new object[] { "Shift", "Ctrl+Space" });
