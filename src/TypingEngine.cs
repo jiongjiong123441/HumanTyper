@@ -108,6 +108,7 @@ namespace HumanTyper
         public void NotifyUserInput(bool isMouse, IntPtr mouseRootWindow)
         {
             if (!IsBusy || _manualPause) return;
+            if (!isMouse && KeyboardOut.IsSelfEcho) return;   // our own driver-level keystrokes
             IntPtr target = _target;
             if (target == IntPtr.Zero) return;
             if (isMouse)
@@ -128,6 +129,13 @@ namespace HumanTyper
             EngineState final = EngineState.Finished;
             try
             {
+                try { _kb = new KeyboardOut((InputMode)_s.InputMode); }
+                catch (Exception ex)
+                {
+                    Report(EngineState.Stopped, "驱动级输入不可用：" + ex.Message);
+                    return;
+                }
+                _imeChinese = _s.RemoteImeChinese;
                 var snap = CaretProbe.Read(_target);
                 _targetFocus = snap.Focus;
                 _baseline = snap;
@@ -139,6 +147,7 @@ namespace HumanTyper
                 Run();
                 Progress(_u.Count, true);
                 if (_s.Proofread) Proofread();
+                if (_kb.IsKeyMode) SetIme(_s.RemoteImeChinese);   // leave the input method as we found it
             }
             catch (OperationCanceledException)
             {
@@ -164,8 +173,19 @@ namespace HumanTyper
                 {
                     int runEnd = i;
                     while (runEnd < n && IsCjk(_u[runEnd])) runEnd++;
-                    int len = PickChunkLength(runEnd - i);
-                    TypeCjkChunk(i, len);
+                    int len;
+                    if (_kb.IsKeyMode)
+                    {
+                        // Typing pinyin: longer chunks give the remote IME context to pick the right words.
+                        int run = runEnd - i;
+                        len = run <= 7 ? run : _rnd.Next(2, 7);
+                        TypePinyinChunk(i, len);
+                    }
+                    else
+                    {
+                        len = PickChunkLength(runEnd - i);
+                        TypeCjkChunk(i, len);
+                    }
                     i += len;
                     Progress(i, false);
                     AfterWord(i - 1);
@@ -188,6 +208,8 @@ namespace HumanTyper
 
                 Wait(LatinDelay(i));
                 Key(u);
+                // In keyboard mode one Shift+6 / Shift+- already gives "……" / "——".
+                if (_kb.IsKeyMode && (u == "…" || u == "—") && i + 1 < n && _u[i + 1] == u) i++;
                 i++;
                 Progress(i, false);
                 AfterUnit(i - 1);
@@ -296,6 +318,79 @@ namespace HumanTyper
             }
             return "的";
         }
+
+        // ------------------------------------------------------------------ Chinese via pinyin keys (remote mode)
+
+        private KeyboardOut _kb;
+        private bool _imeChinese;    // what we believe the target's IME mode is (Chinese / English)
+        private string _commitKey = " ";
+
+        /// <summary>
+        /// Types Chinese the way a person does on a real keyboard: pinyin letters into the IME,
+        /// then Space to commit the top candidate. Unknown characters fall back to Unicode.
+        /// </summary>
+        private void TypePinyinChunk(int start, int len)
+        {
+            var syl = Pinyin.Of(_u, start, len);
+            if (Array.IndexOf(syl, null) >= 0)
+            {
+                // Some character has no known reading: go one by one so the rest still works.
+                for (int k = 0; k < len; k++)
+                {
+                    if (syl[k] == null) { Wait(CjkBaseMs * Jitter()); Key(_u[start + k]); }
+                    else TypePinyin(new[] { syl[k] }, 1);
+                }
+                return;
+            }
+            TypePinyin(syl, len);
+        }
+
+        private void TypePinyin(IList<string> syllables, int chars)
+        {
+            string py = Pinyin.Join(syllables);
+            SetIme(true);
+            int unsampledBefore = _unsampled;
+            double perLetter = chars * CjkBaseMs * 0.8 / Math.Max(1, py.Length);
+            for (int k = 0; k < py.Length; k++)
+            {
+                string letter = py[k].ToString();
+                Wait(Clamp(perLetter * _flow * Jitter(), 25, perLetter * 5));
+                if (letter != "'" && Chance(_s.TypoRate / 100.0) &&
+                    Neighbors.TryGetValue(py[k], out string nb))
+                {
+                    // fat-fingered a pinyin letter: notice in the candidate bar, delete, retype
+                    KeyRaw(nb[_rnd.Next(nb.Length)].ToString());
+                    Wait(Rand(250, 700));
+                    KeyRaw("\b");
+                    Wait(Rand(90, 220));
+                }
+                KeyRaw(letter);
+            }
+            Wait(Rand(150, 550));     // look at the candidates
+            KeyRaw(_commitKey);       // Space = top candidate; "2"/"3" = another one
+            _unsampled = unsampledBefore + chars;
+        }
+
+        /// <summary>Switches the target IME between Chinese and English mode if needed.</summary>
+        private void SetIme(bool chinese)
+        {
+            if (!_kb.IsKeyMode || _imeChinese == chinese) return;
+            Gate();
+            Wait(Rand(120, 350));
+            Gate();
+            if (_s.ImeToggleKey == 1) _kb.CtrlSpace(); else _kb.LoneShift();
+            _imeChinese = chinese;
+            _lastKeyMs = Now;
+            Wait(Rand(150, 350));
+        }
+
+        // Chinese punctuation → the key that produces it while the IME is in Chinese mode.
+        private static readonly Dictionary<string, string> CnPunctKeys = new Dictionary<string, string>
+        {
+            {"，", ","}, {"。", "."}, {"？", "?"}, {"！", "!"}, {"：", ":"}, {"；", ";"}, {"、", "\\"},
+            {"（", "("}, {"）", ")"}, {"《", "<"}, {"》", ">"}, {"“", "\""}, {"”", "\""}, {"‘", "'"}, {"’", "'"},
+            {"【", "["}, {"】", "]"}, {"…", "^"}, {"—", "_"}, {"·", "`"}, {"￥", "$"}, {"「", "["}, {"」", "]"},
+        };
 
         // ------------------------------------------------------------------ Latin typos
 
@@ -661,34 +756,40 @@ namespace HumanTyper
 
         private void Key(string unit)
         {
+            if (_kb.IsKeyMode && unit != "\b" && unit != "\n" && unit != "\t" && unit != " ")
+            {
+                // Real-keyboard mode: Chinese goes through the IME as pinyin, Chinese punctuation
+                // needs the IME in Chinese mode, ASCII letters/symbols need it in English mode.
+                if (IsCjk(unit))
+                {
+                    var syl = Pinyin.Of(new[] { unit }, 0, 1);
+                    if (syl[0] != null) { TypePinyin(syl, 1); return; }
+                }
+                else if (CnPunctKeys.TryGetValue(unit, out string key))
+                {
+                    SetIme(true);
+                    KeyRaw(key);
+                    return;
+                }
+                else if (unit.Length == 1 && unit[0] < 0x80 && !char.IsDigit(unit[0]))
+                {
+                    SetIme(false);
+                }
+            }
+            KeyRaw(unit);
+        }
+
+        /// <summary>Sends one key/character as-is (no IME mode handling).</summary>
+        private void KeyRaw(string unit)
+        {
             Gate();
             SampleCaret();
             if (_interfered) Gate();
-            if (unit == "\n")
-            {
-                if (_s.NewlineMode == 1)
-                {
-                    SendVk(VK_SHIFT, false);
-                    Tap(VK_RETURN);
-                    SendVk(VK_SHIFT, true);
-                }
-                else Tap(VK_RETURN);
-            }
-            else if (unit == "\t") Tap(VK_TAB);
-            else if (unit == "\b") Tap(VK_BACK);
-            else
-            {
-                var downs = new List<INPUT>();
-                var ups = new List<INPUT>();
-                foreach (char c in unit)
-                {
-                    downs.Add(Unicode(c, false));
-                    ups.Add(Unicode(c, true));
-                }
-                Send(downs.ToArray());
-                Thread.Sleep(_rnd.Next(8, 28));
-                Send(ups.ToArray());
-            }
+            if (unit == "\n") _kb.Enter(_s.NewlineMode == 1);
+            else if (unit == "\t") _kb.Tab();
+            else if (unit == "\b") _kb.Backspace();
+            else if (unit == " ") _kb.Space();
+            else _kb.Char(unit);
             _lastKeyMs = Now;
             _unsampled += unit == "\b" ? -1 : 1;
             SettleSample();
@@ -724,39 +825,11 @@ namespace HumanTyper
             }
         }
 
+        /// <summary>Arrow keys for caret movement (catch-up / proofreading).</summary>
         private void Tap(ushort vk)
         {
-            SendVk(vk, false);
-            Thread.Sleep(_rnd.Next(8, 28));
-            SendVk(vk, true);
-        }
-
-        private static void SendVk(ushort vk, bool up)
-        {
-            var inp = new INPUT { type = INPUT_KEYBOARD };
-            // Navigation keys must be flagged "extended", otherwise they act as numpad keys.
-            bool ext = (vk >= 0x21 && vk <= 0x28) || vk == 0x2D || vk == 0x2E;
-            uint flags = (up ? KEYEVENTF_KEYUP : 0) | (ext ? KEYEVENTF_EXTENDEDKEY : 0);
-            inp.U.ki = new KEYBDINPUT { wVk = vk, dwFlags = flags, dwExtraInfo = InjectMarker };
-            Send(new[] { inp });
-        }
-
-        private static INPUT Unicode(char c, bool up)
-        {
-            var inp = new INPUT { type = INPUT_KEYBOARD };
-            inp.U.ki = new KEYBDINPUT
-            {
-                wVk = 0,
-                wScan = c,
-                dwFlags = KEYEVENTF_UNICODE | (up ? KEYEVENTF_KEYUP : 0),
-                dwExtraInfo = InjectMarker
-            };
-            return inp;
-        }
-
-        private static void Send(INPUT[] inputs)
-        {
-            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            if (vk == VK_LEFT) _kb.Left();
+            else if (vk == VK_RIGHT) _kb.Right();
         }
 
         // ------------------------------------------------------------------ helpers

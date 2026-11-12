@@ -34,7 +34,9 @@ namespace HumanTyper
         // control
         private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof;
         private NumericUpDown _numCountdown;
-        private ComboBox _cboNewline;
+        private ComboBox _cboNewline, _cboMode, _cboImeState, _cboImeToggle;
+        private LinkLabel _lnkDriver;
+        private Control _rowIme;
         private HotkeyBox _hkStart, _hkStop, _hkRestart;
 
         // bottom
@@ -180,6 +182,28 @@ namespace HumanTyper
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
             _chkProof = new CheckBox { Text = "打完后从头核对一遍，有错就用键盘移动光标修改", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
             tCtl.Controls.Add(Row(_chkAutoPause, _chkProof));
+            tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
+
+            // keyboard / remote mode
+            _cboMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300, Margin = new Padding(3, 4, 3, 3) };
+            _cboMode.Items.AddRange(new object[]
+            {
+                "标准（本机程序，中文直接上屏）",
+                "键盘扫描码（远程桌面 / 远控软件 / 虚拟机）",
+                "驱动级虚拟键盘（需安装 Interception 驱动）",
+            });
+            _cboImeState = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 80, Margin = new Padding(3, 4, 3, 3) };
+            _cboImeState.Items.AddRange(new object[] { "中文模式", "英文模式" });
+            _cboImeToggle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100, Margin = new Padding(3, 4, 3, 3) };
+            _cboImeToggle.Items.AddRange(new object[] { "Shift", "Ctrl+Space" });
+            _lnkDriver = new LinkLabel { Text = "驱动安装说明", AutoSize = true, Margin = new Padding(8, 7, 3, 3) };
+            _lnkDriver.LinkClicked += (s, e) => ShowDriverHelp();
+            _cboMode.SelectedIndexChanged += (s, e) => UpdateModeUi();
+            tCtl.Controls.Add(Row(Lbl("输入方式"), _cboMode, _lnkDriver));
+            tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
+            _rowIme = Row(Lbl("目标输入法开始时为"), _cboImeState, Lbl("  中英切换键"), _cboImeToggle,
+                Lbl("（中文会打拼音 + 空格选词，请在目标电脑上使用中文输入法）", true));
+            tCtl.Controls.Add(_rowIme);
             gCtl.Controls.Add(tCtl);
             settingsGrid.Controls.Add(gCtl, 0, 1);
             settingsGrid.SetColumnSpan(gCtl, 2);
@@ -277,6 +301,10 @@ namespace HumanTyper
             SetNum(_numSEMin, s.SentEveryMin); SetNum(_numSEMax, s.SentEveryMax);
             SetNum(_numSPMin, (decimal)s.SentPauseMin); SetNum(_numSPMax, (decimal)s.SentPauseMax);
             SetNum(_numPPMin, (decimal)s.ParaPauseMin); SetNum(_numPPMax, (decimal)s.ParaPauseMax);
+            _cboMode.SelectedIndex = Math.Max(0, Math.Min(2, s.InputMode));
+            _cboImeState.SelectedIndex = s.RemoteImeChinese ? 0 : 1;
+            _cboImeToggle.SelectedIndex = s.ImeToggleKey == 1 ? 1 : 0;
+            UpdateModeUi();
             _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
             SetNum(_numCountdown, s.Countdown);
             _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
@@ -301,10 +329,47 @@ namespace HumanTyper
             s.SentEveryMin = (int)Math.Min(_numSEMin.Value, _numSEMax.Value); s.SentEveryMax = (int)Math.Max(_numSEMin.Value, _numSEMax.Value);
             s.SentPauseMin = (double)Math.Min(_numSPMin.Value, _numSPMax.Value); s.SentPauseMax = (double)Math.Max(_numSPMin.Value, _numSPMax.Value);
             s.ParaPauseMin = (double)Math.Min(_numPPMin.Value, _numPPMax.Value); s.ParaPauseMax = (double)Math.Max(_numPPMin.Value, _numPPMax.Value);
+            s.InputMode = Math.Max(0, _cboMode.SelectedIndex);
+            s.RemoteImeChinese = _cboImeState.SelectedIndex != 1;
+            s.ImeToggleKey = _cboImeToggle.SelectedIndex == 1 ? 1 : 0;
             s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
             s.Countdown = (int)_numCountdown.Value;
             s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;
+        }
+
+        private void UpdateModeUi()
+        {
+            if (_cboMode == null || _rowIme == null) return;
+            int mode = _cboMode.SelectedIndex;
+            _rowIme.Enabled = mode != 0;
+            _lnkDriver.Visible = mode == 2;
+            if (_lblStatus == null) return;
+            if (mode == 1)
+                SetStatus("键盘扫描码模式：发送和实体键盘一样的按键，适用于 ToDesk、向日葵、远程桌面、虚拟机等。中文会以拼音输入，请确认目标电脑的输入法设置。");
+            else if (mode == 2)
+                SetStatus(KeyboardOut.Interception.IsAvailable()
+                    ? "驱动级虚拟键盘已就绪：按键从键盘驱动层发出，和实体键盘无法区分。"
+                    : "驱动级模式不可用：" + KeyboardOut.Interception.LastError + " — 点“驱动安装说明”查看步骤。");
+        }
+
+        private void ShowDriverHelp()
+        {
+            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+            string msg =
+                "驱动级虚拟键盘使用开源的 Interception 键盘驱动（作者 oblitum，非商业用途免费）。\n\n" +
+                "1. 打开 https://github.com/oblitum/Interception/releases 下载 Interception.zip 并解压。\n" +
+                "2. 以管理员身份打开命令提示符，进入解压目录的 \"command line installer\" 文件夹，运行：\n" +
+                "       install-interception.exe /install\n" +
+                "3. 重启电脑。\n" +
+                "4. 把解压目录中 library\\x64\\interception.dll 复制到 HumanTyper.exe 所在目录：\n" +
+                "       " + exeDir + "\n\n" +
+                "卸载：同样以管理员身份运行 install-interception.exe /uninstall 后重启。\n\n" +
+                "是否现在打开下载页面？";
+            if (MessageBox.Show(this, msg, "安装 Interception 驱动", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            {
+                try { System.Diagnostics.Process.Start("https://github.com/oblitum/Interception/releases"); } catch { }
+            }
         }
 
         private void UpdateStats()
