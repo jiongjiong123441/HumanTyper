@@ -1,51 +1,83 @@
-name: Build
+name: Build & Release
+
+# 自动构建：推送到任何分支、提交 PR、或手动运行，都会编译并上传 exe（Actions 页面的 Artifacts）。
+# 自动发布：推送到 main 且改动了代码时，发布一个新版本（vX.Y.N，N 自动递增）。
+#   主/次版本号取自 HumanTyper.csproj 里的 <Version>，想发 1.1.x 就把它改成 1.1.0。
+#   只改文档（*.md、LICENSE）只构建、不发布。
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need history + tags to compute the version and changelog
 
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
+      - name: Compute version
+        id: ver
+        shell: bash
+        run: |
+          base=$(grep -oP '<Version>\K[0-9]+\.[0-9]+' HumanTyper.csproj)
+          # next patch = highest existing v<base>.N + 1
+          last=$(git tag -l "v${base}.*" | sed "s/^v${base}\.//" | grep -E '^[0-9]+$' | sort -n | tail -1)
+          patch=$(( ${last:-0} + 1 ))
+          echo "version=${base}.${patch}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${base}.${patch}"
+
       - name: Build
-        run: dotnet build HumanTyper.csproj -c Release -o out
+        run: dotnet build HumanTyper.csproj -c Release -o out -p:Version=${{ steps.ver.outputs.version }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: HumanTyper
+          name: HumanTyper-${{ steps.ver.outputs.version }}
           path: out/HumanTyper.exe
 
-      - name: Publish rolling "latest" release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Publish release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest out/HumanTyper.exe \
-            --title "HumanTyper 最新构建" \
-            --notes "main 分支自动构建（${GITHUB_SHA::7}）。下载 HumanTyper.exe 直接运行，需要 Windows 10/11（自带 .NET Framework 4.8）。" \
-            --prerelease \
-            --target "$GITHUB_SHA"
-
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" out/HumanTyper.exe --title "HumanTyper $GITHUB_REF_NAME" --generate-notes
+          tag="v${VERSION}"
+          prev=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -n "$prev" ] && [ -z "$(git diff --name-only "$prev" HEAD | grep -vE '\.md$|^LICENSE$')" ]; then
+            echo "Only docs changed since $prev — build only, no new release."
+            exit 0
+          fi
+          {
+            echo "## 更新内容"
+            echo
+            if [ -n "$prev" ]; then
+              git log "${prev}..HEAD" --no-merges --pretty='- %s'
+            else
+              git log --no-merges --pretty='- %s'
+            fi
+            echo
+            echo "## 下载"
+            echo
+            echo "下载下方的 **HumanTyper.exe**，双击运行即可（Windows 10/11，系统自带 .NET Framework 4.8，无需安装）。"
+          } > notes.md
+          gh release create "$tag" out/HumanTyper.exe \
+            --title "HumanTyper ${tag}" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA" \
+            --latest

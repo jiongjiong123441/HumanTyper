@@ -45,7 +45,8 @@ namespace HumanTyper
         public MainForm()
         {
             _settings = Settings.Load();
-            Text = "HumanTyper — 拟人自动打字";
+            var ver = typeof(MainForm).Assembly.GetName().Version;
+            Text = $"HumanTyper v{ver.Major}.{ver.Minor}.{ver.Build} — 拟人自动打字";
             Font = new Font("Microsoft YaHei UI", 9F);
             AutoScaleMode = AutoScaleMode.Font;
             StartPosition = FormStartPosition.CenterScreen;

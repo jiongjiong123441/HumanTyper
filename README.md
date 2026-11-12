@@ -4,8 +4,13 @@
 
 ## 下载
 
-到 [Releases](../../releases/tag/latest) 下载 `HumanTyper.exe`，双击运行即可（Windows 10/11，系统自带 .NET Framework 4.8，无需安装）。
-每次推送到 `main` 都会由 GitHub Actions 自动编译并更新这个 release；推送 `v*` 标签会生成正式版本。
+到 [最新版本](../../releases/latest) 下载 `HumanTyper.exe`，双击运行即可（Windows 10/11，系统自带 .NET Framework 4.8，无需安装）。
+
+## 自动构建与发布
+
+- **自动构建**：推送到任何分支或提交 PR，GitHub Actions 都会自动编译，exe 可在对应 Actions 运行页面的 Artifacts 里下载。
+- **自动发布**：推送到 `main` 且改动了代码时，自动发布新版本 `vX.Y.N`（N 自动递增），附带 exe 和本次更新的提交列表。
+- 主/次版本号在 `HumanTyper.csproj` 的 `<Version>` 里，改成 `1.1.0` 后下一次发布就是 `v1.1.1`。只改文档不会发布新版本。
 
 ## 使用
 
