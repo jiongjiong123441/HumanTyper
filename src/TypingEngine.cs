@@ -16,8 +16,9 @@ namespace HumanTyper
     /// IME-like cadence for Chinese. Pauses itself when the user takes over the keyboard/mouse
     /// or leaves the target window, and resumes once the caret is back where it was.
     /// </summary>
-    internal sealed class TypingEngine
+    internal sealed partial class TypingEngine
     {
+        private string _proofMsg;
         public event Action<int, EngineState, string> StateChanged;   // (runId, state, message)
         public event Action<int, int, int> ProgressChanged;          // (runId, done, total)
         private volatile int _runId;
@@ -42,6 +43,8 @@ namespace HumanTyper
         private volatile IntPtr _target;
         private IntPtr _targetFocus;
         private CaretProbe.Snapshot _baseline;
+        private int _unsampled;      // net characters typed since _baseline was sampled (backspace = -1)
+        private int _catchUp;        // Right-arrow presses needed after resuming at _baseline
 
         private double _flow = 1.0;
         private int _wordsLeft, _sentencesLeft;
@@ -65,6 +68,7 @@ namespace HumanTyper
             _u = Split(text);
             _target = target;
             _stop = false; _manualPause = false; _rebaseline = false; _autoPaused = false; _interfered = false;
+            _unsampled = 0; _catchUp = 0;
             _flow = 1.0; _pendingSentence = false; _noTypoAt = -1;
             _wordsLeft = _rnd.Next(_s.WordEveryMin, Math.Max(_s.WordEveryMin, _s.WordEveryMax) + 1);
             _sentencesLeft = _rnd.Next(_s.SentEveryMin, Math.Max(_s.SentEveryMin, _s.SentEveryMax) + 1);
@@ -130,8 +134,11 @@ namespace HumanTyper
                 _lastSampleMs = Now;
                 Report(EngineState.Running, "正在输入…");
                 Progress(0, true);
+                _proofMsg = null;
+                RememberPrior();
                 Run();
                 Progress(_u.Count, true);
+                if (_s.Proofread) Proofread();
             }
             catch (OperationCanceledException)
             {
@@ -143,7 +150,7 @@ namespace HumanTyper
                 Report(EngineState.Stopped, "出错：" + ex.Message);
                 return;
             }
-            Report(final, final == EngineState.Finished ? "输入完成" : "已停止");
+            Report(final, final == EngineState.Finished ? "输入完成" + (_proofMsg != null ? " — " + _proofMsg : "") : "已停止");
         }
 
         private void Run()
@@ -535,6 +542,7 @@ namespace HumanTyper
                 _autoPaused = false;
                 Report(EngineState.Running, "继续输入…");
                 SleepPlain(Rand(500, 1300));   // re-orient before typing again
+                CatchUp();
                 _lastSampleMs = 0;
             }
             return Now - t0;
@@ -564,10 +572,41 @@ namespace HumanTyper
                 if (!_baseline.CaretOk || !snap.CaretOk)
                     return "检测到手动操作（此程序无法读取光标位置）— 确认光标在原处后按 " + Settings.KeyName(_s.StartPauseKey) + " 继续";
                 if (!snap.Near(_baseline))
-                    return "光标已离开原位置 — 把光标点回原处后自动继续";
+                {
+                    // The last few keystrokes may not have been sampled yet: accept the caret if it
+                    // sits just after the remembered spot on the same line (= the real end).
+                    bool justAfter = _unsampled > 0 && Math.Abs(snap.Y - _baseline.Y) <= 3 &&
+                                     snap.X > _baseline.X &&
+                                     snap.X - _baseline.X <= _unsampled * Math.Max(12, _baseline.H) * 1.5;
+                    if (!justAfter)
+                        return "光标已离开原位置 — 把光标点回原处后自动继续";
+                    _unsampled = 0;
+                    _catchUp = 0;
+                    _baseline = snap;
+                    _interfered = false;
+                    return null;
+                }
+                // The caret is back where we last saw it. If some keystrokes were sent after that
+                // sample, the real end of our text is that many characters further right.
+                _catchUp = _unsampled;
                 _interfered = false;
             }
             return null;
+        }
+
+        /// <summary>Moves the caret over characters we typed after the last caret sample.</summary>
+        private void CatchUp()
+        {
+            int n = _catchUp;
+            _catchUp = 0;
+            if (n == 0) return;
+            for (int k = 0; k < Math.Abs(n); k++)
+            {
+                Tap(n > 0 ? VK_RIGHT : VK_LEFT);
+                Thread.Sleep(_rnd.Next(30, 70));
+            }
+            _unsampled = 0;
+            _lastKeyMs = Now;
         }
 
         private void Rebaseline()
@@ -579,22 +618,33 @@ namespace HumanTyper
                 var snap = CaretProbe.Read(fg);
                 _targetFocus = snap.Focus;
                 _baseline = snap;
+                _unsampled = 0;
+                _catchUp = 0;
                 _interfered = false;
             }
         }
 
-        /// <summary>Remembers where the caret is while nobody is touching anything.</summary>
+        /// <summary>
+        /// Remembers where the caret is while nobody is touching anything. Sampled shortly after
+        /// every keystroke so the remembered position is (almost) never behind what was typed;
+        /// _unsampled counts the keystrokes sent since the last good sample.
+        /// </summary>
         private void SampleCaret()
         {
             long now = Now;
-            if (_interfered || now - _lastKeyMs < 90 || now - _lastSampleMs < 100) return;
+            if (_interfered || now - _lastKeyMs < 25) return;
+            if (_unsampled == 0 && now - _lastSampleMs < 150) return;
             _lastSampleMs = now;
             IntPtr fg = GetForegroundWindow();
             if (fg != _target) return;
             var snap = CaretProbe.Read(fg);
             if (_interfered || GetForegroundWindow() != _target) return;
             if (_targetFocus == IntPtr.Zero) _targetFocus = snap.Focus;
-            if (snap.Focus == _targetFocus || snap.Focus == IntPtr.Zero) _baseline = snap;
+            if (snap.Focus == _targetFocus || snap.Focus == IntPtr.Zero)
+            {
+                _baseline = snap;
+                _unsampled = 0;
+            }
         }
 
         private void SleepPlain(double ms)
@@ -612,6 +662,8 @@ namespace HumanTyper
         private void Key(string unit)
         {
             Gate();
+            SampleCaret();
+            if (_interfered) Gate();
             if (unit == "\n")
             {
                 if (_s.NewlineMode == 1)
@@ -638,6 +690,38 @@ namespace HumanTyper
                 Send(ups.ToArray());
             }
             _lastKeyMs = Now;
+            _unsampled += unit == "\b" ? -1 : 1;
+            SettleSample();
+        }
+
+        /// <summary>
+        /// Right after a keystroke, waits (max ~40 ms) until the target has moved its caret and
+        /// remembers the new position, so the "original position" is never a character behind.
+        /// </summary>
+        private void SettleSample()
+        {
+            var before = _baseline;
+            if (!before.CaretOk || _interfered) return;
+            long until = Now + 40;
+            while (Now < until)
+            {
+                Thread.Sleep(4);
+                if (_interfered) return;
+                IntPtr fg = GetForegroundWindow();
+                if (fg != _target) return;
+                var snap = CaretProbe.Read(fg);
+                if (_interfered || !snap.CaretOk) return;
+                if (!snap.Near(before, 0))
+                {
+                    if (snap.Focus == _targetFocus || snap.Focus == IntPtr.Zero)
+                    {
+                        _baseline = snap;
+                        _unsampled = 0;
+                        _lastSampleMs = Now;
+                    }
+                    return;
+                }
+            }
         }
 
         private void Tap(ushort vk)
@@ -650,7 +734,10 @@ namespace HumanTyper
         private static void SendVk(ushort vk, bool up)
         {
             var inp = new INPUT { type = INPUT_KEYBOARD };
-            inp.U.ki = new KEYBDINPUT { wVk = vk, dwFlags = up ? KEYEVENTF_KEYUP : 0, dwExtraInfo = InjectMarker };
+            // Navigation keys must be flagged "extended", otherwise they act as numpad keys.
+            bool ext = (vk >= 0x21 && vk <= 0x28) || vk == 0x2D || vk == 0x2E;
+            uint flags = (up ? KEYEVENTF_KEYUP : 0) | (ext ? KEYEVENTF_EXTENDEDKEY : 0);
+            inp.U.ki = new KEYBDINPUT { wVk = vk, dwFlags = flags, dwExtraInfo = InjectMarker };
             Send(new[] { inp });
         }
 

@@ -29,6 +29,7 @@ namespace HumanTyper
 
         // 控制
         public bool AutoPause = true;
+        public bool Proofread = true;   // 打完后整体核对并用键盘修正
         public int Countdown = 3;
         public int NewlineMode = 0;     // 0 = Enter, 1 = Shift+Enter
         public bool MinimizeOnStart = false;

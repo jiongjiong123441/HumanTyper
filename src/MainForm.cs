@@ -32,7 +32,7 @@ namespace HumanTyper
         private NumericUpDown _numPPMin, _numPPMax;
 
         // control
-        private CheckBox _chkAutoPause, _chkMin, _chkTop;
+        private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof;
         private NumericUpDown _numCountdown;
         private ComboBox _cboNewline;
         private HotkeyBox _hkStart, _hkStop, _hkRestart;
@@ -177,7 +177,8 @@ namespace HumanTyper
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
             tCtl.Controls.Add(Row(Lbl("倒计时"), _numCountdown, Lbl("秒    换行方式"), _cboNewline, _chkMin, _chkTop));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
-            tCtl.Controls.Add(_chkAutoPause);
+            _chkProof = new CheckBox { Text = "打完后从头核对一遍，有错就用键盘移动光标修改", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
+            tCtl.Controls.Add(Row(_chkAutoPause, _chkProof));
             gCtl.Controls.Add(tCtl);
             settingsGrid.Controls.Add(gCtl, 0, 1);
             settingsGrid.SetColumnSpan(gCtl, 2);
@@ -275,7 +276,7 @@ namespace HumanTyper
             SetNum(_numSEMin, s.SentEveryMin); SetNum(_numSEMax, s.SentEveryMax);
             SetNum(_numSPMin, (decimal)s.SentPauseMin); SetNum(_numSPMax, (decimal)s.SentPauseMax);
             SetNum(_numPPMin, (decimal)s.ParaPauseMin); SetNum(_numPPMax, (decimal)s.ParaPauseMax);
-            _chkAutoPause.Checked = s.AutoPause; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
+            _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
             SetNum(_numCountdown, s.Countdown);
             _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
             _hkStart.Hotkey = s.StartPauseKey; _hkStop.Hotkey = s.StopKey; _hkRestart.Hotkey = s.RestartKey;
@@ -299,7 +300,7 @@ namespace HumanTyper
             s.SentEveryMin = (int)Math.Min(_numSEMin.Value, _numSEMax.Value); s.SentEveryMax = (int)Math.Max(_numSEMin.Value, _numSEMax.Value);
             s.SentPauseMin = (double)Math.Min(_numSPMin.Value, _numSPMax.Value); s.SentPauseMax = (double)Math.Max(_numSPMin.Value, _numSPMax.Value);
             s.ParaPauseMin = (double)Math.Min(_numPPMin.Value, _numPPMax.Value); s.ParaPauseMax = (double)Math.Max(_numPPMin.Value, _numPPMax.Value);
-            s.AutoPause = _chkAutoPause.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
+            s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
             s.Countdown = (int)_numCountdown.Value;
             s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;

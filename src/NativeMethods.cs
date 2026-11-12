@@ -14,6 +14,8 @@ namespace HumanTyper
         public const ushort VK_TAB = 0x09;
         public const ushort VK_RETURN = 0x0D;
         public const ushort VK_SHIFT = 0x10;
+        public const ushort VK_LEFT = 0x25;
+        public const ushort VK_RIGHT = 0x27;
 
         public const int WH_KEYBOARD_LL = 13;
         public const int WH_MOUSE_LL = 14;
