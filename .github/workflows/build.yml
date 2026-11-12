@@ -36,7 +36,7 @@ jobs:
         run: |
           base=$(grep -oP '<Version>\K[0-9]+\.[0-9]+' HumanTyper.csproj)
           # next patch = highest existing v<base>.N + 1
-          last=$(git tag -l "v${base}.*" | sed "s/^v${base}\.//" | grep -E '^[0-9]+$' | sort -n | tail -1)
+          last=$(git tag -l "v${base}.*" | sed "s/^v${base}\.//" | { grep -E '^[0-9]+$' || true; } | sort -n | tail -1)
           patch=$(( ${last:-0} + 1 ))
           echo "version=${base}.${patch}" >> "$GITHUB_OUTPUT"
           echo "Version: ${base}.${patch}"
@@ -59,7 +59,7 @@ jobs:
         run: |
           tag="v${VERSION}"
           prev=$(git tag -l 'v*' --sort=-v:refname | head -1)
-          if [ -n "$prev" ] && [ -z "$(git diff --name-only "$prev" HEAD | grep -vE '\.md$|^LICENSE$')" ]; then
+          if [ -n "$prev" ] && [ -z "$(git diff --name-only "$prev" HEAD | { grep -vE '\.md$|^LICENSE$|^docs/' || true; })" ]; then
             echo "Only docs changed since $prev — build only, no new release."
             exit 0
           fi

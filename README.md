@@ -1,69 +1,205 @@
-# HumanTyper — 拟人自动打字
+<div align="center">
 
-把一段文本像真人一样"打"进任何输入框：速度有快有慢、偶尔打错再回删、打几个词停一下、打完一句想一想、换段落时停得更久。支持中英文。
+# HumanTyper
 
-## 下载
+**像真人一样打字的 Windows 自动输入工具**
 
-到 [最新版本](../../releases/latest) 下载 `HumanTyper.exe`，双击运行即可（Windows 10/11，系统自带 .NET Framework 4.8，无需安装）。
+有快有慢 · 偶尔打错再改 · 打几个词停一下 · 写完一句想一想 · 支持中英文
 
-## 自动构建与发布
+[![Build & Release](https://github.com/jiongjiong123441/HumanTyper/actions/workflows/build.yml/badge.svg)](https://github.com/jiongjiong123441/HumanTyper/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/jiongjiong123441/HumanTyper?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/jiongjiong123441/HumanTyper/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/jiongjiong123441/HumanTyper/total?label=%E4%B8%8B%E8%BD%BD)](https://github.com/jiongjiong123441/HumanTyper/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 
-- **自动构建**：推送到任何分支或提交 PR，GitHub Actions 都会自动编译，exe 可在对应 Actions 运行页面的 Artifacts 里下载。
-- **自动发布**：推送到 `main` 且改动了代码时，自动发布新版本 `vX.Y.N`（N 自动递增），附带 exe 和本次更新的提交列表。
-- 主/次版本号在 `HumanTyper.csproj` 的 `<Version>` 里，改成 `1.1.0` 后下一次发布就是 `v1.1.1`。只改文档不会发布新版本。
+[**⬇ 下载最新版**](https://github.com/jiongjiong123441/HumanTyper/releases/latest) · [使用方法](#快速上手) · [参数说明](#参数说明) · [常见问题](#常见问题) · [English](#english)
 
-## 使用
+<img src="docs/screenshot.png" alt="HumanTyper 主界面" width="760">
 
-1. 把文本粘贴到上方文本框（或"打开文件…"）。
-2. 点 **开始**，在倒计时内点击要输入的位置；或者先把光标放到目标位置，直接按 **F8** 立即开始。
-3. 打字过程中：
+</div>
 
-| 操作 | 按钮 | 默认快捷键 |
-| --- | --- | --- |
-| 开始 / 暂停 / 继续 | 开始、暂停/继续 | F8 |
-| 停止 | 停止 | F9 |
-| 重新开始（从头再打一遍） | 重新开始 | F10 |
+---
 
-快捷键是全局的，可以在"控制"区点击输入框后按下新的组合键修改（Del 清除）。
+## 为什么做这个
 
-## 自动暂停 / 自动继续
+普通的"自动输入"要么一次性粘贴，要么匀速逐字敲出，一眼就能看出不是人打的。
+HumanTyper 把一段文字**按人的节奏**敲进任意输入框：节奏忽快忽慢、手滑打错后退格修正、写到一半停下来想想，中文还会像输入法那样一个词一个词地上屏。打完之后它还会**从头核对一遍**，有遗漏就用键盘把光标移过去改好。
 
-勾选"光标离开原位置/窗口时自动暂停"后：
+## 功能
 
-- **切到别的窗口** → 暂停；切回原窗口后自动继续。
-- **在目标窗口里点鼠标、按方向键等手动操作** → 暂停；当光标回到原来的位置时自动继续。
-- 有些程序不公开光标位置，这时无法判断是否回到了原处，会提示你确认光标位置后按 **F8** 继续。
-- 暂停状态下按 F8 = 以**当前**窗口和光标位置为准继续输入。
+| | |
+| --- | --- |
+| ⌨️ **拟人节奏** | 速度随机波动，常见字母组合更快，大写和符号更慢，整体有"手感"起伏 |
+| ✏️ **模拟错字** | 英文：按错相邻键、两字母打反、重复按键、漏按；中文：选错输入法候选词。可能多打几个字才发现，再退格重打 |
+| 💭 **思考停顿** | 每隔几个词短停、每隔几句话长停、换段落停得更久，频率和时长都能调 |
+| 🀄 **中英文混排** | 中文按 1–4 字一个词，先"拼音"再整词上屏；英文按 WPM 计速；支持 emoji |
+| ⏸️ **快捷键 + 按钮** | 开始 / 暂停 / 继续 / 停止 / 重新开始，按钮和全局快捷键都能用，快捷键可自定义 |
+| 🖱️ **自动暂停 / 继续** | 切走窗口或挪动光标就自动暂停，回到原来的位置自动接着打 |
+| 🔍 **打完核对** | 读回目标框里的实际文字逐字比对，用方向键 + 退格 + 重打修正，只动自己打的那一段 |
+| 📦 **单文件绿色版** | 一个 ~50 KB 的 exe，无需安装，Windows 10/11 自带运行环境 |
 
-## 打完后整体核对
+## 快速上手
 
-勾选"打完后从头核对一遍"（默认开启）后，全部打完会停一下"读一遍"：读取目标输入框里实际的文字，与原文逐字比对，
-发现漏字、多字、错字时，用 ←/→ 方向键把光标移过去，退格删除再重新输入正确内容，改完回到末尾，再核对一遍确认。
+1. 到 [Releases](https://github.com/jiongjiong123441/HumanTyper/releases/latest) 下载 `HumanTyper.exe`，双击运行。
+2. 把要输入的文字粘贴进上方文本框（也可以"打开文件…"，支持 UTF-8 / GBK）。
+3. 开始输入，二选一：
+   - 点 **开始**，在倒计时（默认 3 秒）内点一下要输入的位置；
+   - 或者先把光标放到目标位置，直接按 **F8**，立刻开始。
+4. 坐着看它打完即可。中途想接管就按 F8 暂停，或者直接动鼠标——它会自己停下。
 
-- 只核对本次打出的这一段，输入框里原本就有的内容不会被改动。
-- 读取文字依赖 Windows UI 自动化（记事本、Word、Chrome/Edge 网页输入框等大多支持）；不支持的程序会提示跳过。
-- 差异过大（比如光标被挪到了别处）时为避免误改会自动放弃修改，并在状态栏提示。
+### 快捷键
 
-## 拟人参数
+| 操作 | 默认快捷键 | 说明 |
+| --- | :---: | --- |
+| 开始 / 暂停 / 继续 | `F8` | 空闲时按下：直接在当前光标处开始；运行时按下：暂停；暂停时按下：在**当前**光标位置继续 |
+| 停止 | `F9` | 也可取消倒计时 |
+| 重新开始 | `F10` | 停止当前任务，从头再打一遍 |
 
-- **速度**：英文按 WPM，中文按 字/分钟；"节奏波动"控制快慢不均的程度；常见字母组合（th、er…）打得更快，大写/符号更慢。
-- **错字**：英文模拟按错相邻键、两个字母打反、重复按键、漏按；中文模拟选错输入法候选词。可能继续多打几个字后才发现，再用退格删掉重打。
-- **思考停顿**：每隔几个词短停、每隔几句话长停、每段结束后停更久，范围都可自定义；逗号等标点后也会稍微停顿。
-- **中文**：每 1–4 个字为一个词，先"拼音"一段时间再整词上屏，模拟输入法节奏。
-- **换行方式**：聊天软件里 Enter 会直接发送，可改用 Shift+Enter。
+快捷键是全局的，在任何程序里都有效。在"控制"区点击快捷键框后按下新的组合键即可修改（如 `Ctrl+Shift+P`），按 `Del` 清除。
 
-## 注意
+### 自动暂停与继续
 
-- 文字通过 Unicode 键盘事件直接发送，与当前输入法无关；个别程序如果出现异常，把输入法切到英文模式即可。
-- 目标程序以管理员权限运行时，需要同样以管理员身份运行 HumanTyper。
-- 设置保存在 `%APPDATA%\HumanTyper\settings.ini`。
+勾选"光标离开原位置/窗口时自动暂停"（默认开启）后：
 
-## 自己编译
+- **切到别的窗口** → 暂停；切回来后自动继续。
+- **在目标窗口里点鼠标、按方向键等** → 暂停；把光标放回原来的位置后自动继续。
+- 有些程序不公开光标位置，无法判断是否回到了原处，此时会提示你确认后按 `F8` 继续。
+
+### 打完后整体核对
+
+勾选"打完后从头核对一遍"（默认开启）后，打完会停一下"读一遍"：
+
+1. 通过 Windows UI 自动化读取目标输入框里实际的文字，与原文逐字比对；
+2. 发现漏字、多字、错字，就用 `←` `→` 把光标移过去，`Backspace` 删掉，再重新输入正确内容；
+3. 改完回到末尾，再核对一遍，状态栏显示"已修正 N 处"。
+
+只会改动本次打出的那一段，输入框里原有的内容不受影响；差异过大（比如光标被挪到了别处）时会放弃修改以免误伤。
+
+## 参数说明
+
+| 分组 | 参数 | 默认值 | 说明 |
+| --- | --- | :---: | --- |
+| 速度 | 英文速度 | 55 WPM | 每分钟单词数（1 词 = 5 个字符） |
+| | 中文速度 | 80 字/分 | 包含"拼音 + 选词"的时间 |
+| | 节奏波动 | 30 % | 越大越不均匀，0 为匀速 |
+| 错字 | 错字频率 | 3 % | 每个字出错的概率，0 为不出错 |
+| | 发现错误 | 最多多打 3 个字 | 打错后可能再打几个字才回删 |
+| 思考停顿 | 打几个词 | 每 4–12 个词停 0.4–1.8 秒 | 短暂停顿 |
+| | 打几句话 | 每 1–3 句停 1.5–5 秒 | 想下一句 |
+| | 换段落 | 停 2.5–7 秒 | 构思下一段 |
+| | 标点停顿 | 开 | 逗号、分号、顿号后稍作停顿 |
+| 控制 | 倒计时 | 3 秒 | 点"开始"后留给你切换窗口的时间 |
+| | 换行方式 | Enter | 聊天软件里 Enter 会直接发送，可改为 `Shift+Enter` |
+| | 开始时最小化 / 窗口置顶 | 关 | |
+
+所有设置自动保存在 `%APPDATA%\HumanTyper\settings.ini`。界面上还会实时显示字数和预计耗时。
+
+## 常见问题
+
+<details>
+<summary><b>中文输入法开着会不会打乱？</b></summary>
+
+不会。文字通过 Unicode 键盘事件直接发送，不经过输入法。极个别程序如果表现异常，把输入法切到英文模式即可。
+</details>
+
+<details>
+<summary><b>在某个程序里完全打不出字？</b></summary>
+
+如果目标程序是以管理员身份运行的，Windows 会拦截普通程序发给它的按键。请右键 HumanTyper →"以管理员身份运行"。
+</details>
+
+<details>
+<summary><b>代码编辑器里出现多余的缩进或括号？</b></summary>
+
+这是编辑器的自动缩进 / 自动补全括号造成的（真人打字也会触发）。可以先在编辑器里临时关闭这些功能；开启"打完后核对"也会把多出来的字符删掉。
+</details>
+
+<details>
+<summary><b>提示"目标程序不支持读取文本，已跳过核对"？</b></summary>
+
+核对功能依赖 Windows UI 自动化读取文字。记事本、Word、Chrome / Edge 中的网页输入框等大多支持；少数自绘界面的程序（部分游戏、远程桌面窗口等）不支持，这时只会跳过核对，不影响输入。
+</details>
+
+<details>
+<summary><b>暂停后迟迟不自动继续？</b></summary>
+
+自动继续要求光标回到**暂停前的位置**。如果你就是想在新位置继续，直接按 `F8` 即可。
+</details>
+
+<details>
+<summary><b>杀毒软件报毒？</b></summary>
+
+程序会模拟键盘输入并监听全局按键 / 鼠标（用于检测你是否接管），部分杀软会因此误报。源码完全公开，也可以按下文自行编译。
+</details>
+
+## 从源码构建
+
+需要 [.NET SDK](https://dotnet.microsoft.com/download)（6.0 或更新，用于编译；生成的程序运行在 Windows 自带的 .NET Framework 4.8 上）。
 
 ```bash
+git clone https://github.com/jiongjiong123441/HumanTyper.git
+cd HumanTyper
 dotnet build HumanTyper.csproj -c Release -o out
 ```
 
+生成的 `out/HumanTyper.exe` 即可直接运行。
+
+### 项目结构
+
+```
+HumanTyper/
+├─ src/
+│  ├─ Program.cs         入口（单实例）
+│  ├─ MainForm.cs        界面、全局快捷键、倒计时
+│  ├─ TypingEngine.cs    打字引擎：节奏、错字、思考停顿、暂停/继续判断、键盘发送
+│  ├─ Proofreader.cs     打完核对：读回文本、差异比对、用键盘修正
+│  ├─ CaretProbe.cs      读取前台窗口的输入焦点和光标位置（Win32 / MSAA）
+│  ├─ InputMonitor.cs    低级键盘/鼠标钩子，检测用户手动操作
+│  ├─ HotkeyBox.cs       快捷键录入控件
+│  ├─ Settings.cs        设置的保存与读取
+│  └─ NativeMethods.cs   Win32 API 声明
+├─ docs/screenshot.png
+├─ app.manifest
+└─ HumanTyper.csproj
+```
+
+### 工作原理（简述）
+
+- **输入**：`SendInput` + `KEYEVENTF_UNICODE` 逐字发送，换行/退格/方向键用虚拟键码。
+- **节奏**：以设定速度为基准，乘以对数正态分布的随机抖动和缓慢漂移的"状态"系数，并按字符类型、常见双字母组合微调。
+- **暂停检测**：记录开始时的前台窗口、焦点控件和光标坐标；每次按键后立即重新采样光标；低级钩子发现真实（非注入）的鼠标点击或按键时暂停，直到窗口、焦点和光标都回到原位。
+- **核对**：开始前记下光标前已有多少文字，结束后用 UI Automation `TextPattern` 读回文本，对"本次输入的那一段"与原文做 Myers 差异比对，再从后往前逐处修正。
+
+## 自动构建与发布
+
+本仓库用 GitHub Actions 自动构建和发布（[`.github/workflows/build.yml`](.github/workflows/build.yml)）：
+
+- **自动构建**：推送到任意分支、提交 PR 或手动运行时自动编译，exe 作为 Artifact 上传。
+- **自动发布**：推送到 `main` 且改动了代码时，自动发布新版本 `vX.Y.N`（N 自动递增），附带 exe 和自上个版本以来的提交列表；只改文档则只构建不发布。
+- 主 / 次版本号取自 `HumanTyper.csproj` 的 `<Version>`：改成 `1.1.0`，下一次发布就是 `v1.1.1`。
+
+## 参与贡献
+
+欢迎提 [Issue](https://github.com/jiongjiong123441/HumanTyper/issues) 反馈问题或建议，也欢迎 Pull Request：
+
+1. Fork 本仓库并新建分支；
+2. 修改后本地 `dotnet build` 确认能编译，并在记事本等程序里实际试一下；
+3. 提交 PR，说明改了什么、为什么改。PR 会自动触发构建检查。
+
+反馈问题时请尽量附上：目标程序（如 Chrome 里的某网站、Word、记事本）、复现步骤、状态栏提示文字。
+
+## 免责声明
+
+本工具用于演示、录屏、教学、无障碍辅助等正当用途。请勿用于违反考试、平台或任何服务规则的场景，使用者需自行承担相应责任。
+
 ## 许可证
 
-[MIT](LICENSE)
+[MIT](LICENSE) © 2026 jiongjiong123441
+
+---
+
+## English
+
+**HumanTyper** is a small Windows tool that types text into any input box the way a person would: uneven rhythm, occasional typos that get noticed and backspaced, short pauses between words and longer ones between sentences and paragraphs. It supports Chinese (IME-like word-by-word commits) and English. It pauses automatically when you switch windows or move the caret and resumes once the caret is back. After finishing, it reads the text back, diffs it against the source, and fixes any differences using arrow keys, Backspace and retyping.
+
+Download `HumanTyper.exe` from the [latest release](https://github.com/jiongjiong123441/HumanTyper/releases/latest) (Windows 10/11, no install). Default hotkeys: `F8` start / pause / resume, `F9` stop, `F10` restart. Licensed under [MIT](LICENSE).
