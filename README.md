@@ -58,3 +58,7 @@
 ```bash
 dotnet build HumanTyper.csproj -c Release -o out
 ```
+
+## 许可证
+
+[MIT](LICENSE)

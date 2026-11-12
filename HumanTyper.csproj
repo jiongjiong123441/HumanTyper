@@ -11,7 +11,8 @@
     <Version>1.0.0</Version>
     <Product>HumanTyper</Product>
     <Description>拟人自动打字工具</Description>
-    <Copyright>MIT License</Copyright>
+    <Copyright>Copyright (c) 2026 jiongjiong123441, MIT License</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
     <DebugType>none</DebugType>
