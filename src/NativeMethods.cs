@@ -116,6 +116,21 @@ namespace HumanTyper
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int max);
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 

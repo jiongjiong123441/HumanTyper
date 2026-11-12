@@ -44,12 +44,15 @@ namespace HumanTyper
             return true;
         }
 
+        private enum ReadVia { Uia, Clipboard, Ocr }
+
         private void Proofread()
         {
             var want = new List<string>(_u.Count);
             foreach (var x in _u) want.Add(NormUnit(x));
 
-            int totalFixed = 0, skippedCn = 0;
+            int totalFixed = 0, skippedCn = 0, uncertain = 0;
+            ReadVia? via = null;           // once a fallback was needed, keep using it
             for (int pass = 1; pass <= 2; pass++)
             {
                 Report(EngineState.Thinking, pass == 1 ? "正在从头核对一遍…" : "再核对一遍…");
@@ -57,55 +60,62 @@ namespace HumanTyper
                 Gate();
                 SleepPlain(120);   // let the target finish processing our keystrokes
 
-                if (!TryReadTextBeforeCaret(out string before))
+                bool read = false;
+                List<string> w = null;
+                List<Hunk> hunks = null;
+                int skipped = 0;
+                ReadVia used = ReadVia.Uia;
+
+                // 1) UI Automation: reads the text without touching anything.
+                if ((via == null || via == ReadVia.Uia) && TryReadTextBeforeCaret(out string uia) && uia.Length > 0)
+                {
+                    read = true;
+                    hunks = Analyze(uia, want, true, out w, out skipped);
+                }
+                // 2) Clipboard: select back to the start, copy, put the user's clipboard back.
+                //    Also tried when UIA returned something that doesn't look like our text.
+                if ((hunks == null || TooManyChanges(hunks, want)) && via != ReadVia.Ocr && _s.ClipboardProofread &&
+                    TryReadByClipboard(out string clip) && clip.Length > 0)
+                {
+                    var h2 = Analyze(clip, want, false, out var w2, out int sk2);
+                    if (h2 != null || !read)
+                    {
+                        read = true; used = ReadVia.Clipboard;
+                        hunks = h2; w = w2; skipped = sk2;
+                    }
+                }
+                // 3) Screenshot + OCR (English words only, both readings must agree).
+                if ((!read || hunks == null) && via != ReadVia.Clipboard && _s.OcrProofread && TryProofreadByOcr(want, out var w3, out var h3, out int unc))
+                {
+                    read = true; used = ReadVia.Ocr;
+                    hunks = h3; w = w3;
+                    uncertain = unc;
+                }
+                if (read && via == null) via = used;
+                string how = via == ReadVia.Clipboard ? "（剪贴板方式）" : via == ReadVia.Ocr ? "（截图识别，仅英文）" : "";
+
+                if (!read)
                 {
                     _proofMsg = totalFixed > 0 ? $"已修正 {totalFixed} 处（之后无法再读取目标文本）"
-                                               : "目标程序不支持读取文本，已跳过核对";
+                                               : "目标程序读不到文本，也无法复制或识别，已跳过核对";
                     return;
                 }
-
-                var doc = Split(Normalize(before));
-                int slack = 20 + want.Count / 10;
-                List<string> w;
-                bool exact = PriorStillThere(doc);
-                if (exact)
-                {
-                    // We know exactly where our text starts: compare just that stretch.
-                    w = doc.GetRange(_priorLen, doc.Count - _priorLen);
-                }
-                else
-                {
-                    int wLen = Math.Min(doc.Count, want.Count + slack);
-                    w = doc.GetRange(doc.Count - wLen, wLen);
-                }
-
-                var hunks = DiffHunks(w, want, slack + 40 + want.Count / 5, exact);
                 if (hunks == null)
                 {
-                    _proofMsg = "与原文差异过大（光标可能不在文末），已跳过自动修正";
+                    _proofMsg = "与原文差异过大（光标可能不在文末），已跳过自动修正" + how;
                     return;
                 }
-                if (_kb.IsKeyMode)
-                {
-                    // Typing through an IME: a Chinese character swapped for another one is just the
-                    // IME picking a homophone. Let it be — only fix missing/extra text and non-Chinese.
-                    int before0 = hunks.Count;
-                    hunks.RemoveAll(h => h.Insert.Count > 0 && h.AEnd - h.AStart == h.Insert.Count &&
-                                         h.Insert.TrueForAll(IsCjk) && w.GetRange(h.AStart, h.AEnd - h.AStart).TrueForAll(IsCjk));
-                    if (pass == 1) skippedCn = before0 - hunks.Count;
-                }
+                if (pass == 1) skippedCn = skipped;
+                string notes = (skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "") +
+                               (uncertain > 0 ? $"（{uncertain} 处疑似差异无法确认，未改动）" : "");
                 if (hunks.Count == 0)
                 {
-                    string skip = skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "";
-                    _proofMsg = (totalFixed > 0 ? $"核对完成，已修正 {totalFixed} 处" : "核对完成，没有发现错误") + skip;
+                    _proofMsg = (totalFixed > 0 ? $"核对完成，已修正 {totalFixed} 处" : "核对完成，没有发现错误") + how + notes;
                     return;
                 }
-
-                int changed = 0;
-                foreach (var h in hunks) changed += Math.Max(h.AEnd - h.AStart, h.Insert.Count);
-                if (changed > Math.Max(8, want.Count / 4))
+                if (TooManyChanges(hunks, want))
                 {
-                    _proofMsg = $"发现 {changed} 处差异，差异过大，为避免误改已跳过自动修正";
+                    _proofMsg = $"发现 {Changed(hunks)} 处差异，差异过大，为避免误改已跳过自动修正" + how;
                     return;
                 }
 
@@ -116,7 +126,165 @@ namespace HumanTyper
                 try { ApplyHunks(hunks, w.Count); } finally { _fixing = false; }
                 totalFixed += hunks.Count;
             }
-            _proofMsg = $"已修正 {totalFixed} 处" + (skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "");
+            _proofMsg = $"已修正 {totalFixed} 处" +
+                        (via == ReadVia.Clipboard ? "（剪贴板方式）" : via == ReadVia.Ocr ? "（截图识别，仅英文）" : "") +
+                        (skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "") +
+                        (uncertain > 0 ? $"（{uncertain} 处疑似差异无法确认，未改动）" : "");
+        }
+
+        /// <summary>
+        /// Diffs the text before the caret against the wanted text. Returns null if they differ
+        /// too much to align; in keyboard mode Chinese-for-Chinese swaps (IME homophones) are dropped.
+        /// </summary>
+        private List<Hunk> Analyze(string before, List<string> want, bool allowExact, out List<string> w, out int skippedCn)
+        {
+            skippedCn = 0;
+            var doc = Split(Normalize(before));
+            int slack = 20 + want.Count / 10;
+            bool exact = allowExact && PriorStillThere(doc);
+            if (exact)
+            {
+                // We know exactly where our text starts: compare just that stretch.
+                w = doc.GetRange(_priorLen, doc.Count - _priorLen);
+            }
+            else
+            {
+                int wLen = Math.Min(doc.Count, want.Count + slack);
+                w = doc.GetRange(doc.Count - wLen, wLen);
+            }
+
+            var hunks = DiffHunks(w, want, slack + 40 + want.Count / 5, exact);
+            if (hunks == null) return null;
+            if (_kb.IsKeyMode)
+            {
+                // Typing through an IME: a Chinese character swapped for another one is just the
+                // IME picking a homophone. Let it be — only fix missing/extra text and non-Chinese.
+                var ww = w;
+                int n0 = hunks.Count;
+                hunks.RemoveAll(h => h.Insert.Count > 0 && h.AEnd - h.AStart == h.Insert.Count &&
+                                     h.Insert.TrueForAll(IsCjk) && ww.GetRange(h.AStart, h.AEnd - h.AStart).TrueForAll(IsCjk));
+                skippedCn = n0 - hunks.Count;
+            }
+            return hunks;
+        }
+
+        private static int Changed(List<Hunk> hunks)
+        {
+            int changed = 0;
+            foreach (var h in hunks) changed += Math.Max(h.AEnd - h.AStart, h.Insert.Count);
+            return changed;
+        }
+
+        private static bool TooManyChanges(List<Hunk> hunks, List<string> want) =>
+            Changed(hunks) > Math.Max(8, want.Count / 4);
+
+        /// <summary>
+        /// Reads the text before the caret the way a person would check it: Ctrl+Shift+Home to
+        /// select back to the start, Ctrl+C, then → to drop the selection with the caret back at
+        /// the end. The user's clipboard is saved first and put back afterwards. Works in any app
+        /// that supports copying — including remote windows when clipboard sync is on.
+        /// </summary>
+        private bool TryReadByClipboard(out string before)
+        {
+            before = null;
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero || IsOwnWindow(fg) || IsTerminal(fg)) return false;   // Ctrl+C would interrupt a console
+
+            Report(EngineState.Thinking, "读不到文本，改用剪贴板读取已输入的内容…");
+            var saved = ClipboardText.Save();
+            uint seq0 = ClipboardText.Sequence;
+            bool remote = _kb.IsKeyMode;
+            string text = null;
+            try
+            {
+                _kb.SelectToStart();
+                _lastKeyMs = Now;
+                SleepPlain(remote ? 250 : 90);
+                _kb.Copy();
+                _lastKeyMs = Now;
+                long until = Now + (remote ? 3000 : 1500);    // remote clipboard sync takes a moment
+                while (Now < until && ClipboardText.Sequence == seq0) SleepPlain(25);
+                if (ClipboardText.Sequence != seq0)
+                {
+                    SleepPlain(remote ? 150 : 50);           // the owner may still be adding formats
+                    text = ClipboardText.GetText();
+                }
+            }
+            finally
+            {
+                // → collapses the selection to its end, which is where the caret was.
+                _kb.Right();
+                _lastKeyMs = Now;
+                Thread.Sleep(remote ? 200 : 60);
+                ClipboardText.Restore(saved);
+            }
+            before = text;
+            return text != null;
+        }
+
+        private static bool IsTerminal(IntPtr hwnd)
+        {
+            var sb = new System.Text.StringBuilder(128);
+            GetClassName(hwnd, sb, 128);
+            string c = sb.ToString();
+            return c == "ConsoleWindowClass" || c == "CASCADIA_HOSTING_WINDOW_CLASS" || c == "mintty" ||
+                   c == "VirtualConsoleClass" || c == "PuTTY";
+        }
+
+        /// <summary>
+        /// Screenshot check: OCR the target window twice at different zoom levels and fix only the
+        /// English words both readings agree are wrong. Returns false if our text can't be found.
+        /// </summary>
+        private bool TryProofreadByOcr(List<string> want, out List<string> w, out List<Hunk> hunks, out int uncertain)
+        {
+            w = null; hunks = null; uncertain = 0;
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero || IsOwnWindow(fg) || !ScreenOcr.Available) return false;
+            if (!GetWindowRect(fg, out RECT r)) return false;
+            var area = System.Drawing.Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+            area.Intersect(System.Windows.Forms.SystemInformation.VirtualScreen);
+            // Only what's above the caret line: our text ends there, anything below is other UI.
+            var c = _baseline;
+            if (_caretTracks && c.CaretOk && c.Y > area.Top && c.Y < area.Bottom)
+                area.Height = Math.Min(area.Height, c.Y + Math.Max(c.H, 16) + 4 - area.Top);
+
+            // Something of ours on top of the target (our window shows the source text!)?
+            // Then render the target window by itself instead of grabbing the screen.
+            bool covered = false;
+            IntPtr me = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
+            if (me != IntPtr.Zero && IsWindowVisible(me) && !IsIconic(me) && GetWindowRect(me, out RECT mr) &&
+                System.Drawing.Rectangle.FromLTRB(mr.Left, mr.Top, mr.Right, mr.Bottom).IntersectsWith(area))
+                covered = true;
+
+            Report(EngineState.Thinking, "读不到文本，改用截图识别核对…");
+            var wantWords = new List<string>();
+            var spans = OcrMatch.WordSpans(want);
+            foreach (var (s, e) in spans) wantWords.Add(string.Concat(want.GetRange(s, e - s)));
+
+            var r1 = OcrMatch.Compare(ScreenOcr.ReadWords(area, 2.0, covered, fg), wantWords);
+            if (_stop) throw new OperationCanceledException();
+            var r2 = OcrMatch.Compare(ScreenOcr.ReadWords(area, 3.0, covered, fg), wantWords);
+            if (r1 == null && r2 == null) return false;
+
+            // A fix is made only if both readings saw the very same wrong word and nothing
+            // unsure lies between it and the caret.
+            var fixes = OcrMatch.Agree(r1, r2, out uncertain);
+
+            // What we believe is on screen: the wanted text with those words as seen.
+            w = new List<string>(want);
+            fixes.Sort((x, y) => y.WordStart.CompareTo(x.WordStart));
+            int changed = 0;
+            foreach (var f in fixes)
+            {
+                int s = spans[f.WordStart].start, e = spans[f.WordEnd - 1].end;
+                var seenUnits = Split(f.Seen);
+                w.RemoveRange(s, e - s);
+                w.InsertRange(s, seenUnits);
+                changed += Math.Max(e - s, seenUnits.Count);
+            }
+            hunks = fixes.Count == 0 ? new List<Hunk>() : DiffHunks(w, want, changed * 2 + 10, true);
+            if (hunks == null) { hunks = new List<Hunk>(); uncertain += fixes.Count; }
+            return true;
         }
 
         /// <summary>
