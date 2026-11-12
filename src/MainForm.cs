@@ -1,0 +1,567 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Text;
+using System.Windows.Forms;
+using static HumanTyper.NativeMethods;
+
+namespace HumanTyper
+{
+    internal sealed class MainForm : Form
+    {
+        private const int HK_STARTPAUSE = 1, HK_STOP = 2, HK_RESTART = 3;
+
+        private readonly Settings _settings;
+        private readonly TypingEngine _engine = new TypingEngine();
+        private readonly InputMonitor _monitor = new InputMonitor();
+        private readonly Timer _countdownTimer = new Timer { Interval = 1000 };
+        private int _countdownLeft;
+        private bool _counting;
+
+        // text
+        private TextBox _txt;
+        private Label _lblStats;
+
+        // speed & typo
+        private NumericUpDown _numWpm, _numCpm, _numVar, _numTypo, _numNotice;
+
+        // thinking
+        private CheckBox _chkThink, _chkPunct;
+        private NumericUpDown _numWEMin, _numWEMax, _numWPMin, _numWPMax;
+        private NumericUpDown _numSEMin, _numSEMax, _numSPMin, _numSPMax;
+        private NumericUpDown _numPPMin, _numPPMax;
+
+        // control
+        private CheckBox _chkAutoPause, _chkMin, _chkTop;
+        private NumericUpDown _numCountdown;
+        private ComboBox _cboNewline;
+        private HotkeyBox _hkStart, _hkStop, _hkRestart;
+
+        // bottom
+        private Button _btnStart, _btnPause, _btnStop, _btnRestart;
+        private ProgressBar _bar;
+        private Label _lblStatus, _lblProgress;
+
+        public MainForm()
+        {
+            _settings = Settings.Load();
+            Text = "HumanTyper — 拟人自动打字";
+            Font = new Font("Microsoft YaHei UI", 9F);
+            AutoScaleMode = AutoScaleMode.Font;
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = new Size(1040, 800);
+            MinimumSize = new Size(960, 700);
+            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+
+            BuildUi();
+            LoadSettingsToUi();
+            UpdateStats();
+            SetUiState(EngineState.Idle);
+
+            _engine.StateChanged += (run, st, msg) => BeginInvokeSafe(() => { if (run == _engine.RunId) OnEngineState(st, msg); });
+            _engine.ProgressChanged += (run, done, total) => BeginInvokeSafe(() => { if (run == _engine.RunId) OnProgress(done, total); });
+            _monitor.UserInput += OnUserInput;
+            _countdownTimer.Tick += CountdownTick;
+        }
+
+        // ================================================================== UI construction
+
+        private void BuildUi()
+        {
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4,
+                Padding = new Padding(10),
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            Controls.Add(root);
+
+            // ---- text
+            var gText = new GroupBox { Text = "要输入的文本（支持中英文）", Dock = DockStyle.Fill, Padding = new Padding(8) };
+            var textLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+            textLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            textLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            _txt = new TextBox
+            {
+                Multiline = true,
+                ScrollBars = ScrollBars.Vertical,
+                AcceptsReturn = true,
+                AcceptsTab = true,
+                Dock = DockStyle.Fill,
+                Font = new Font("Microsoft YaHei UI", 10.5F),
+                MaxLength = 0,
+            };
+            _txt.TextChanged += (s, e) => UpdateStats();
+            _txt.KeyDown += (s, e) =>
+            {
+                if (e.Control && e.KeyCode == Keys.A) { _txt.SelectAll(); e.SuppressKeyPress = true; }
+            };
+            textLayout.Controls.Add(_txt, 0, 0);
+
+            var textBar = Row();
+            var btnPaste = SmallButton("粘贴剪贴板", (s, e) => { if (Clipboard.ContainsText()) _txt.Text = Clipboard.GetText(); });
+            var btnOpen = SmallButton("打开文件…", (s, e) => OpenFile());
+            var btnClear = SmallButton("清空", (s, e) => _txt.Clear());
+            _lblStats = new Label { AutoSize = true, Margin = new Padding(12, 8, 0, 0), ForeColor = SystemColors.GrayText };
+            textBar.Controls.AddRange(new Control[] { btnPaste, btnOpen, btnClear, _lblStats });
+            textLayout.Controls.Add(textBar, 0, 1);
+            gText.Controls.Add(textLayout);
+            root.Controls.Add(gText, 0, 0);
+
+            // ---- settings area
+            var settingsGrid = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 2, Margin = new Padding(0) };
+            settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            settingsGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+            // speed & typo
+            var gSpeed = Group("速度与错字");
+            var tSpeed = Grid(2);
+            _numWpm = Num(5, 300, 0, 1);
+            _numCpm = Num(5, 400, 0, 1);
+            _numVar = Num(0, 100, 0, 5);
+            _numTypo = Num(0, 30, 1, 0.5m);
+            _numNotice = Num(0, 3, 0, 1);
+            AddRow(tSpeed, "英文速度", Row(_numWpm, Lbl("词/分钟 (WPM)")));
+            AddRow(tSpeed, "中文速度", Row(_numCpm, Lbl("字/分钟")));
+            AddRow(tSpeed, "节奏波动", Row(_numVar, Lbl("%（越大越不均匀）")));
+            AddRow(tSpeed, "错字频率", Row(_numTypo, Lbl("%（每个字出错的概率）")));
+            AddRow(tSpeed, "发现错误", Row(Lbl("最多多打"), _numNotice, Lbl("个字后才回删")));
+            gSpeed.Controls.Add(tSpeed);
+            settingsGrid.Controls.Add(gSpeed, 0, 0);
+
+            // thinking
+            var gThink = Group("模拟思考停顿");
+            var tThink = Grid(2);
+            _chkThink = new CheckBox { Text = "启用思考停顿", AutoSize = true, Margin = new Padding(3, 5, 3, 3) };
+            _chkPunct = new CheckBox { Text = "逗号等标点后短暂停顿", AutoSize = true, Margin = new Padding(12, 5, 3, 3) };
+            _numWEMin = Num(1, 200, 0, 1); _numWEMax = Num(1, 200, 0, 1);
+            _numWPMin = Num(0, 60, 1, 0.1m); _numWPMax = Num(0, 60, 1, 0.1m);
+            _numSEMin = Num(1, 50, 0, 1); _numSEMax = Num(1, 50, 0, 1);
+            _numSPMin = Num(0, 120, 1, 0.5m); _numSPMax = Num(0, 120, 1, 0.5m);
+            _numPPMin = Num(0, 300, 1, 0.5m); _numPPMax = Num(0, 300, 1, 0.5m);
+            tThink.Controls.Add(Row(_chkThink, _chkPunct), 0, tThink.RowCount);
+            tThink.SetColumnSpan(tThink.Controls[tThink.Controls.Count - 1], 2);
+            tThink.RowCount++;
+            AddRow(tThink, "打几个词", Row(Lbl("每"), _numWEMin, Lbl("–"), _numWEMax, Lbl("个词，停"), _numWPMin, Lbl("–"), _numWPMax, Lbl("秒")));
+            AddRow(tThink, "打几句话", Row(Lbl("每"), _numSEMin, Lbl("–"), _numSEMax, Lbl("句话，停"), _numSPMin, Lbl("–"), _numSPMax, Lbl("秒")));
+            AddRow(tThink, "换段落", Row(Lbl("每段结束停"), _numPPMin, Lbl("–"), _numPPMax, Lbl("秒")));
+            AddRow(tThink, "", Row(Lbl("中文每 1–4 个字算一个词（模拟输入法整词上屏）", true)));
+            gThink.Controls.Add(tThink);
+            settingsGrid.Controls.Add(gThink, 1, 0);
+
+            // control
+            var gCtl = Group("控制");
+            var tCtl = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true };
+            _hkStart = new HotkeyBox(); _hkStop = new HotkeyBox(); _hkRestart = new HotkeyBox();
+            foreach (var hk in new[] { _hkStart, _hkStop, _hkRestart })
+            {
+                hk.GotFocus += (s, e) => UnregisterHotkeys();
+                hk.LostFocus += (s, e) => { ReadUiToSettings(); RegisterHotkeys(); };
+            }
+            _numCountdown = Num(0, 30, 0, 1);
+            _cboNewline = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110, Margin = new Padding(3, 4, 3, 3) };
+            _cboNewline.Items.AddRange(new object[] { "Enter", "Shift+Enter" });
+            _chkAutoPause = new CheckBox { Text = "光标离开原位置/窗口时自动暂停，回到原处自动继续", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
+            _chkMin = new CheckBox { Text = "开始时最小化本窗口", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
+            _chkTop = new CheckBox { Text = "窗口置顶", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
+            _chkTop.CheckedChanged += (s, e) => TopMost = _chkTop.Checked;
+
+            tCtl.Controls.Add(Row(Lbl("开始/暂停/继续"), _hkStart, Lbl("   停止"), _hkStop, Lbl("   重新开始"), _hkRestart,
+                Lbl("（点击后按键设置，Del 清除）", true)));
+            tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
+            tCtl.Controls.Add(Row(Lbl("倒计时"), _numCountdown, Lbl("秒    换行方式"), _cboNewline, _chkMin, _chkTop));
+            tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
+            tCtl.Controls.Add(_chkAutoPause);
+            gCtl.Controls.Add(tCtl);
+            settingsGrid.Controls.Add(gCtl, 0, 1);
+            settingsGrid.SetColumnSpan(gCtl, 2);
+
+            root.Controls.Add(settingsGrid, 0, 1);
+
+            // ---- buttons
+            var bar = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 6, Margin = new Padding(0, 6, 0, 0) };
+            for (int i = 0; i < 4; i++) bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            _btnStart = BigButton("开始", (s, e) => BeginCountdown());
+            _btnPause = BigButton("暂停", (s, e) => _engine.TogglePause());
+            _btnStop = BigButton("停止", (s, e) => StopAll());
+            _btnRestart = BigButton("重新开始", (s, e) => Restart(fromHotkey: false));
+            _bar = new ProgressBar { Dock = DockStyle.Fill, Margin = new Padding(10, 10, 6, 10), Height = 22 };
+            _lblProgress = new Label { AutoSize = true, Margin = new Padding(0, 12, 0, 0), Text = "0 / 0" };
+            bar.Controls.Add(_btnStart, 0, 0);
+            bar.Controls.Add(_btnPause, 1, 0);
+            bar.Controls.Add(_btnStop, 2, 0);
+            bar.Controls.Add(_btnRestart, 3, 0);
+            bar.Controls.Add(_bar, 4, 0);
+            bar.Controls.Add(_lblProgress, 5, 0);
+            root.Controls.Add(bar, 0, 2);
+
+            _lblStatus = new Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Height = 44,
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(6, 4, 6, 4),
+                TextAlign = ContentAlignment.MiddleLeft,
+                BackColor = SystemColors.Info,
+                ForeColor = SystemColors.InfoText,
+            };
+            root.Controls.Add(_lblStatus, 0, 3);
+        }
+
+        private static GroupBox Group(string text) =>
+            new GroupBox { Text = text, Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(8, 4, 8, 6) };
+
+        private static TableLayoutPanel Grid(int cols)
+        {
+            var t = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = cols, RowCount = 0 };
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            return t;
+        }
+
+        private static void AddRow(TableLayoutPanel t, string label, Control c)
+        {
+            t.Controls.Add(new Label { Text = label, AutoSize = true, Margin = new Padding(3, 7, 6, 3) }, 0, t.RowCount);
+            t.Controls.Add(c, 1, t.RowCount);
+            t.RowCount++;
+        }
+
+        private static FlowLayoutPanel Row(params Control[] items)
+        {
+            var p = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0), Dock = DockStyle.Fill };
+            p.Controls.AddRange(items);
+            return p;
+        }
+
+        private static Label Lbl(string text, bool gray = false) =>
+            new Label { Text = text, AutoSize = true, Margin = new Padding(2, 7, 2, 3), ForeColor = gray ? SystemColors.GrayText : SystemColors.ControlText };
+
+        private static NumericUpDown Num(decimal min, decimal max, int decimals, decimal inc) =>
+            new NumericUpDown { Minimum = min, Maximum = max, DecimalPlaces = decimals, Increment = inc, Width = 62, Margin = new Padding(3, 3, 3, 3), TextAlign = HorizontalAlignment.Right };
+
+        private static Button SmallButton(string text, EventHandler onClick)
+        {
+            var b = new Button { Text = text, AutoSize = true, Margin = new Padding(0, 4, 6, 0) };
+            b.Click += onClick;
+            return b;
+        }
+
+        private static Button BigButton(string text, EventHandler onClick)
+        {
+            var b = new Button { Text = text, Width = 96, Height = 34, Margin = new Padding(0, 4, 8, 4) };
+            b.Click += onClick;
+            return b;
+        }
+
+        // ================================================================== settings <-> UI
+
+        private void LoadSettingsToUi()
+        {
+            var s = _settings;
+            SetNum(_numWpm, s.EnWpm); SetNum(_numCpm, s.ZhCpm); SetNum(_numVar, s.Variance);
+            SetNum(_numTypo, (decimal)s.TypoRate); SetNum(_numNotice, s.MaxNoticeDelay);
+            _chkThink.Checked = s.ThinkEnabled; _chkPunct.Checked = s.PunctPause;
+            SetNum(_numWEMin, s.WordEveryMin); SetNum(_numWEMax, s.WordEveryMax);
+            SetNum(_numWPMin, (decimal)s.WordPauseMin); SetNum(_numWPMax, (decimal)s.WordPauseMax);
+            SetNum(_numSEMin, s.SentEveryMin); SetNum(_numSEMax, s.SentEveryMax);
+            SetNum(_numSPMin, (decimal)s.SentPauseMin); SetNum(_numSPMax, (decimal)s.SentPauseMax);
+            SetNum(_numPPMin, (decimal)s.ParaPauseMin); SetNum(_numPPMax, (decimal)s.ParaPauseMax);
+            _chkAutoPause.Checked = s.AutoPause; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
+            SetNum(_numCountdown, s.Countdown);
+            _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
+            _hkStart.Hotkey = s.StartPauseKey; _hkStop.Hotkey = s.StopKey; _hkRestart.Hotkey = s.RestartKey;
+
+            foreach (var n in new[] { _numWpm, _numCpm, _numVar, _numTypo, _numWEMin, _numWEMax, _numWPMin, _numWPMax,
+                                      _numSEMin, _numSEMax, _numSPMin, _numSPMax, _numPPMin, _numPPMax })
+                n.ValueChanged += (sender, e) => UpdateStats();
+            _chkThink.CheckedChanged += (sender, e) => UpdateStats();
+        }
+
+        private static void SetNum(NumericUpDown n, decimal v) => n.Value = Math.Max(n.Minimum, Math.Min(n.Maximum, v));
+
+        private void ReadUiToSettings()
+        {
+            var s = _settings;
+            s.EnWpm = (int)_numWpm.Value; s.ZhCpm = (int)_numCpm.Value; s.Variance = (int)_numVar.Value;
+            s.TypoRate = (double)_numTypo.Value; s.MaxNoticeDelay = (int)_numNotice.Value;
+            s.ThinkEnabled = _chkThink.Checked; s.PunctPause = _chkPunct.Checked;
+            s.WordEveryMin = (int)Math.Min(_numWEMin.Value, _numWEMax.Value); s.WordEveryMax = (int)Math.Max(_numWEMin.Value, _numWEMax.Value);
+            s.WordPauseMin = (double)Math.Min(_numWPMin.Value, _numWPMax.Value); s.WordPauseMax = (double)Math.Max(_numWPMin.Value, _numWPMax.Value);
+            s.SentEveryMin = (int)Math.Min(_numSEMin.Value, _numSEMax.Value); s.SentEveryMax = (int)Math.Max(_numSEMin.Value, _numSEMax.Value);
+            s.SentPauseMin = (double)Math.Min(_numSPMin.Value, _numSPMax.Value); s.SentPauseMax = (double)Math.Max(_numSPMin.Value, _numSPMax.Value);
+            s.ParaPauseMin = (double)Math.Min(_numPPMin.Value, _numPPMax.Value); s.ParaPauseMax = (double)Math.Max(_numPPMin.Value, _numPPMax.Value);
+            s.AutoPause = _chkAutoPause.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
+            s.Countdown = (int)_numCountdown.Value;
+            s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
+            s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;
+        }
+
+        private void UpdateStats()
+        {
+            if (_lblStats == null || _numWpm == null) return;
+            ReadUiToSettings();
+            var units = TypingEngine.Split(_txt.Text);
+            int cjk = 0;
+            foreach (var u in units) if (TypingEngine.IsCjk(u)) cjk++;
+            double sec = TypingEngine.Estimate(_txt.Text, _settings);
+            _lblStats.Text = $"共 {units.Count} 字符（中文 {cjk}）  预计约 {FormatDuration(sec)}";
+        }
+
+        private static string FormatDuration(double sec)
+        {
+            if (sec < 60) return $"{sec:0} 秒";
+            if (sec < 3600) return $"{(int)(sec / 60)} 分 {(int)(sec % 60)} 秒";
+            return $"{(int)(sec / 3600)} 小时 {(int)(sec % 3600 / 60)} 分";
+        }
+
+        private void OpenFile()
+        {
+            using (var dlg = new OpenFileDialog { Filter = "文本文件|*.txt;*.md;*.csv;*.log|所有文件|*.*" })
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    byte[] bytes = File.ReadAllBytes(dlg.FileName);
+                    string text;
+                    try { text = new UTF8Encoding(false, true).GetString(bytes); if (text.Length > 0 && text[0] == '﻿') text = text.Substring(1); }
+                    catch (DecoderFallbackException) { text = Encoding.GetEncoding(936).GetString(bytes); }
+                    _txt.Text = text;
+                }
+                catch (Exception ex) { MessageBox.Show(this, ex.Message, "无法打开文件", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            }
+        }
+
+        // ================================================================== start / pause / stop / restart
+
+        private bool CanStart(out string text)
+        {
+            text = _txt.Text;
+            if (string.IsNullOrEmpty(text))
+            {
+                SetStatus("请先输入或粘贴要打的文本。");
+                return false;
+            }
+            return true;
+        }
+
+        private void BeginCountdown()
+        {
+            if (_engine.IsBusy || _counting) return;
+            if (!CanStart(out _)) return;
+            ReadUiToSettings();
+            _settings.Save();
+
+            _countdownLeft = _settings.Countdown;
+            if (_countdownLeft <= 0) _countdownLeft = 1;   // need at least a moment to switch window
+            _counting = true;
+            SetUiState(EngineState.Idle);
+            if (_settings.MinimizeOnStart) WindowState = FormWindowState.Minimized;
+            SetStatus($"{_countdownLeft} 秒后开始 — 请立刻点击要输入文字的位置（按 {Settings.KeyName(_settings.StopKey)} 取消）");
+            _countdownTimer.Start();
+        }
+
+        private void CountdownTick(object sender, EventArgs e)
+        {
+            _countdownLeft--;
+            if (_countdownLeft > 0)
+            {
+                SetStatus($"{_countdownLeft} 秒后开始 — 请立刻点击要输入文字的位置（按 {Settings.KeyName(_settings.StopKey)} 取消）");
+                return;
+            }
+            _countdownTimer.Stop();
+            _counting = false;
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero || IsOwnWindow(fg))
+            {
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+                SetStatus("没有检测到目标窗口：请在倒计时结束前点击要输入的位置。也可以先点到目标位置，再按 "
+                          + Settings.KeyName(_settings.StartPauseKey) + " 直接开始。");
+                SetUiState(EngineState.Idle);
+                return;
+            }
+            StartOn(fg);
+        }
+
+        private void StartOn(IntPtr target)
+        {
+            if (!CanStart(out string text)) return;
+            ReadUiToSettings();
+            _settings.Save();
+            _bar.Value = 0;
+            _engine.Start(text, _settings, target);
+            SetUiState(EngineState.Running);
+        }
+
+        /// <summary>Hotkey start: type straight into whatever window currently has focus.</summary>
+        private void StartFromHotkey()
+        {
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero || IsOwnWindow(fg)) { BeginCountdown(); return; }
+            if (!CanStart(out _)) return;
+            StartOn(fg);
+        }
+
+        private void StopAll()
+        {
+            if (_counting)
+            {
+                _countdownTimer.Stop();
+                _counting = false;
+                SetStatus("已取消倒计时。");
+                if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+                SetUiState(EngineState.Idle);
+                return;
+            }
+            _engine.Stop();
+        }
+
+        private void Restart(bool fromHotkey)
+        {
+            if (_counting) { _countdownTimer.Stop(); _counting = false; }
+            if (_engine.IsBusy) _engine.StopAndWait();
+
+            if (fromHotkey) StartFromHotkey();
+            else BeginCountdown();
+        }
+
+        // ================================================================== engine callbacks
+
+        private void OnEngineState(EngineState st, string msg)
+        {
+            SetStatus(msg);
+            SetUiState(st);
+            if (st == EngineState.Finished) _bar.Value = _bar.Maximum;
+        }
+
+        private void OnProgress(int done, int total)
+        {
+            _bar.Maximum = Math.Max(1, total);
+            _bar.Value = Math.Min(_bar.Maximum, Math.Max(0, done));
+            _lblProgress.Text = $"{done} / {total}";
+        }
+
+        private void SetUiState(EngineState st)
+        {
+            bool busy = _engine.IsBusy && st != EngineState.Finished && st != EngineState.Stopped;
+            _btnStart.Enabled = !busy && !_counting;
+            _btnPause.Enabled = busy;
+            _btnStop.Enabled = busy || _counting;
+            _btnRestart.Enabled = true;
+            _btnPause.Text = st == EngineState.Paused ? "继续" : "暂停";
+            _lblStatus.BackColor = st == EngineState.Paused ? Color.FromArgb(255, 236, 200)
+                                 : (st == EngineState.Running || st == EngineState.Thinking) ? Color.FromArgb(220, 245, 222)
+                                 : SystemColors.Info;
+        }
+
+        private void SetStatus(string msg)
+        {
+            _lblStatus.Text = msg;
+        }
+
+        private void OnUserInput(bool isMouse, uint vk, IntPtr root)
+        {
+            if (!isMouse && IsHotkeyVk(vk)) return;
+            _engine.NotifyUserInput(isMouse, root);
+        }
+
+        private bool IsHotkeyVk(uint vk)
+        {
+            foreach (var k in new[] { _settings.StartPauseKey, _settings.StopKey, _settings.RestartKey })
+                if ((uint)(k & Keys.KeyCode) == vk && vk != 0) return true;
+            return false;
+        }
+
+        // ================================================================== hotkeys
+
+        private void RegisterHotkeys()
+        {
+            UnregisterHotkeys();
+            var failed = new StringBuilder();
+            TryRegister(HK_STARTPAUSE, _settings.StartPauseKey, failed);
+            TryRegister(HK_STOP, _settings.StopKey, failed);
+            TryRegister(HK_RESTART, _settings.RestartKey, failed);
+            if (failed.Length > 0)
+                SetStatus("以下快捷键注册失败（可能被其他程序占用），请换一个：" + failed);
+        }
+
+        private void TryRegister(int id, Keys k, StringBuilder failed)
+        {
+            Keys code = k & Keys.KeyCode;
+            if (code == Keys.None) return;
+            uint mod = MOD_NOREPEAT;
+            if ((k & Keys.Control) != 0) mod |= MOD_CONTROL;
+            if ((k & Keys.Alt) != 0) mod |= MOD_ALT;
+            if ((k & Keys.Shift) != 0) mod |= MOD_SHIFT;
+            if (!RegisterHotKey(Handle, id, mod, (uint)code))
+                failed.Append(Settings.KeyName(k)).Append(' ');
+        }
+
+        private void UnregisterHotkeys()
+        {
+            if (!IsHandleCreated) return;
+            UnregisterHotKey(Handle, HK_STARTPAUSE);
+            UnregisterHotKey(Handle, HK_STOP);
+            UnregisterHotKey(Handle, HK_RESTART);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_HOTKEY)
+            {
+                switch (m.WParam.ToInt32())
+                {
+                    case HK_STARTPAUSE:
+                        if (_engine.IsBusy) _engine.TogglePause();
+                        else if (!_counting) StartFromHotkey();
+                        break;
+                    case HK_STOP:
+                        StopAll();
+                        break;
+                    case HK_RESTART:
+                        Restart(fromHotkey: true);
+                        break;
+                }
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
+        // ================================================================== lifecycle
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            TopMost = _settings.TopMost;
+            RegisterHotkeys();
+            _monitor.Install();
+            if (_lblStatus.Text.Length == 0)
+                SetStatus($"粘贴文本后点“开始”，在倒计时内点击目标输入位置；或先点到目标位置再按 {Settings.KeyName(_settings.StartPauseKey)} 立即开始。"
+                          + $"  {Settings.KeyName(_settings.StartPauseKey)} 暂停/继续，{Settings.KeyName(_settings.StopKey)} 停止，{Settings.KeyName(_settings.RestartKey)} 重新开始。");
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            ReadUiToSettings();
+            _settings.Save();
+            _engine.StopAndWait(1000);
+            UnregisterHotkeys();
+            _monitor.Dispose();
+            base.OnFormClosing(e);
+        }
+
+        private void BeginInvokeSafe(Action a)
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            try { BeginInvoke(a); } catch (ObjectDisposedException) { } catch (InvalidOperationException) { }
+        }
+    }
+}
