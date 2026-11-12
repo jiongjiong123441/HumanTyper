@@ -33,7 +33,7 @@ namespace HumanTyper
         private NumericUpDown _numPPMin, _numPPMax;
 
         // control
-        private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof;
+        private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof, _chkMouseMove;
         private NumericUpDown _numCountdown, _numIdle;
         private ComboBox _cboNewline, _cboMode, _cboImeState, _cboImeToggle;
         private LinkLabel _lnkDriver;
@@ -186,7 +186,8 @@ namespace HumanTyper
             tCtl.Controls.Add(Row(_chkAutoPause, _chkProof));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
             _numIdle = Num(0, 60, 0, 1);
-            tCtl.Controls.Add(Row(Lbl("读不到光标位置时（如远程窗口、被远程控制时），停止操作"), _numIdle,
+            _chkMouseMove = new CheckBox { Text = "鼠标移动也暂停", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
+            tCtl.Controls.Add(Row(_chkMouseMove, Lbl("读不到光标位置时，停止操作"), _numIdle,
                 Lbl("秒后自动继续（0 = 只能按快捷键继续）", true)));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
 
@@ -314,6 +315,7 @@ namespace HumanTyper
             _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
             SetNum(_numCountdown, s.Countdown);
             SetNum(_numIdle, s.IdleResumeSec);
+            _chkMouseMove.Checked = s.PauseOnMouseMove;
             _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
             _hkStart.Hotkey = s.StartPauseKey; _hkStop.Hotkey = s.StopKey; _hkRestart.Hotkey = s.RestartKey;
 
@@ -342,6 +344,7 @@ namespace HumanTyper
             s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
             s.Countdown = (int)_numCountdown.Value;
             s.IdleResumeSec = (int)_numIdle.Value;
+            s.PauseOnMouseMove = _chkMouseMove.Checked;
             s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;
         }
