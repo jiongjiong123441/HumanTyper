@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Automation.Text;
 using static HumanTyper.NativeMethods;
@@ -44,12 +45,15 @@ namespace HumanTyper
             return true;
         }
 
+        private enum ReadVia { Uia, Clipboard, Ocr }
+
         private void Proofread()
         {
             var want = new List<string>(_u.Count);
             foreach (var x in _u) want.Add(NormUnit(x));
 
-            int totalFixed = 0, skippedCn = 0;
+            int totalFixed = 0, skippedCn = 0, uncertain = 0;
+            ReadVia? via = null;           // once a fallback was needed, keep using it
             for (int pass = 1; pass <= 2; pass++)
             {
                 Report(EngineState.Thinking, pass == 1 ? "正在从头核对一遍…" : "再核对一遍…");
@@ -57,55 +61,62 @@ namespace HumanTyper
                 Gate();
                 SleepPlain(120);   // let the target finish processing our keystrokes
 
-                if (!TryReadTextBeforeCaret(out string before))
+                bool read = false;
+                List<string> w = null;
+                List<Hunk> hunks = null;
+                int skipped = 0;
+                ReadVia used = ReadVia.Uia;
+
+                // 1) UI Automation: reads the text without touching anything.
+                if ((via == null || via == ReadVia.Uia) && TryReadTextBeforeCaret(out string uia) && uia.Length > 0)
+                {
+                    read = true;
+                    hunks = Analyze(uia, want, true, out w, out skipped);
+                }
+                // 2) Clipboard: select back to the start, copy, put the user's clipboard back.
+                //    Also tried when UIA returned something that doesn't look like our text.
+                if ((hunks == null || TooManyChanges(hunks, want)) && via != ReadVia.Ocr && _s.ClipboardProofread &&
+                    TryReadByClipboard(out string clip) && clip.Length > 0)
+                {
+                    var h2 = Analyze(clip, want, false, out var w2, out int sk2);
+                    if (h2 != null || !read)
+                    {
+                        read = true; used = ReadVia.Clipboard;
+                        hunks = h2; w = w2; skipped = sk2;
+                    }
+                }
+                // 3) Screenshot + OCR (English words only, both readings must agree).
+                if ((!read || hunks == null) && via != ReadVia.Clipboard && _s.OcrProofread && TryProofreadByOcr(want, out var w3, out var h3, out int unc))
+                {
+                    read = true; used = ReadVia.Ocr;
+                    hunks = h3; w = w3;
+                    uncertain = unc;
+                }
+                if (read && via == null) via = used;
+                string how = via == ReadVia.Clipboard ? "（剪贴板方式）" : via == ReadVia.Ocr ? "（截图识别，仅英文）" : "";
+
+                if (!read)
                 {
                     _proofMsg = totalFixed > 0 ? $"已修正 {totalFixed} 处（之后无法再读取目标文本）"
-                                               : "目标程序不支持读取文本，已跳过核对";
+                                               : "目标程序读不到文本，也无法复制或识别，已跳过核对";
                     return;
                 }
-
-                var doc = Split(Normalize(before));
-                int slack = 20 + want.Count / 10;
-                List<string> w;
-                bool exact = PriorStillThere(doc);
-                if (exact)
-                {
-                    // We know exactly where our text starts: compare just that stretch.
-                    w = doc.GetRange(_priorLen, doc.Count - _priorLen);
-                }
-                else
-                {
-                    int wLen = Math.Min(doc.Count, want.Count + slack);
-                    w = doc.GetRange(doc.Count - wLen, wLen);
-                }
-
-                var hunks = DiffHunks(w, want, slack + 40 + want.Count / 5, exact);
                 if (hunks == null)
                 {
-                    _proofMsg = "与原文差异过大（光标可能不在文末），已跳过自动修正";
+                    _proofMsg = "与原文差异过大（光标可能不在文末），已跳过自动修正" + how;
                     return;
                 }
-                if (_kb.IsKeyMode)
-                {
-                    // Typing through an IME: a Chinese character swapped for another one is just the
-                    // IME picking a homophone. Let it be — only fix missing/extra text and non-Chinese.
-                    int before0 = hunks.Count;
-                    hunks.RemoveAll(h => h.Insert.Count > 0 && h.AEnd - h.AStart == h.Insert.Count &&
-                                         h.Insert.TrueForAll(IsCjk) && w.GetRange(h.AStart, h.AEnd - h.AStart).TrueForAll(IsCjk));
-                    if (pass == 1) skippedCn = before0 - hunks.Count;
-                }
+                if (pass == 1) skippedCn = skipped;
+                string notes = (skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "") +
+                               (uncertain > 0 ? $"（{uncertain} 处疑似差异无法确认，未改动）" : "");
                 if (hunks.Count == 0)
                 {
-                    string skip = skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "";
-                    _proofMsg = (totalFixed > 0 ? $"核对完成，已修正 {totalFixed} 处" : "核对完成，没有发现错误") + skip;
+                    _proofMsg = (totalFixed > 0 ? $"核对完成，已修正 {totalFixed} 处" : "核对完成，没有发现错误") + how + notes;
                     return;
                 }
-
-                int changed = 0;
-                foreach (var h in hunks) changed += Math.Max(h.AEnd - h.AStart, h.Insert.Count);
-                if (changed > Math.Max(8, want.Count / 4))
+                if (TooManyChanges(hunks, want))
                 {
-                    _proofMsg = $"发现 {changed} 处差异，差异过大，为避免误改已跳过自动修正";
+                    _proofMsg = $"发现 {Changed(hunks)} 处差异，差异过大，为避免误改已跳过自动修正" + how;
                     return;
                 }
 
@@ -116,7 +127,276 @@ namespace HumanTyper
                 try { ApplyHunks(hunks, w.Count); } finally { _fixing = false; }
                 totalFixed += hunks.Count;
             }
-            _proofMsg = $"已修正 {totalFixed} 处" + (skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "");
+            _proofMsg = $"已修正 {totalFixed} 处" +
+                        (via == ReadVia.Clipboard ? "（剪贴板方式）" : via == ReadVia.Ocr ? "（截图识别，仅英文）" : "") +
+                        (skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "") +
+                        (uncertain > 0 ? $"（{uncertain} 处疑似差异无法确认，未改动）" : "");
+        }
+
+        /// <summary>
+        /// Diffs the text before the caret against the wanted text. Returns null if they differ
+        /// too much to align; in keyboard mode Chinese-for-Chinese swaps (IME homophones) are dropped.
+        /// </summary>
+        private List<Hunk> Analyze(string before, List<string> want, bool allowExact, out List<string> w, out int skippedCn)
+        {
+            skippedCn = 0;
+            var doc = Split(Normalize(before));
+            int slack = 20 + want.Count / 10;
+            bool exact = allowExact && PriorStillThere(doc);
+            if (exact)
+            {
+                // We know exactly where our text starts: compare just that stretch.
+                w = doc.GetRange(_priorLen, doc.Count - _priorLen);
+            }
+            else
+            {
+                int wLen = Math.Min(doc.Count, want.Count + slack);
+                w = doc.GetRange(doc.Count - wLen, wLen);
+            }
+
+            var hunks = DiffHunks(w, want, slack + 40 + want.Count / 5, exact);
+            if (hunks == null) return null;
+            if (_kb.IsKeyMode)
+            {
+                // Typing through an IME: a Chinese character swapped for another one is just the
+                // IME picking a homophone. Let it be — only fix missing/extra text and non-Chinese.
+                var ww = w;
+                int n0 = hunks.Count;
+                hunks.RemoveAll(h => h.Insert.Count > 0 && h.AEnd - h.AStart == h.Insert.Count &&
+                                     h.Insert.TrueForAll(IsCjk) && ww.GetRange(h.AStart, h.AEnd - h.AStart).TrueForAll(IsCjk));
+                skippedCn = n0 - hunks.Count;
+            }
+            return hunks;
+        }
+
+        private static int Changed(List<Hunk> hunks)
+        {
+            int changed = 0;
+            foreach (var h in hunks) changed += Math.Max(h.AEnd - h.AStart, h.Insert.Count);
+            return changed;
+        }
+
+        private static bool TooManyChanges(List<Hunk> hunks, List<string> want) =>
+            Changed(hunks) > Math.Max(8, want.Count / 4);
+
+        /// <summary>
+        /// Reads the text before the caret the way a person would check it: Ctrl+Shift+Home to
+        /// select back to the start, Ctrl+C, then → to drop the selection with the caret back at
+        /// the end. The user's clipboard is saved first and put back afterwards. Works in any app
+        /// that supports copying — including remote windows when clipboard sync is on.
+        /// </summary>
+        private bool TryReadByClipboard(out string before)
+        {
+            before = null;
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero || IsOwnWindow(fg) || IsTerminal(fg)) return false;   // Ctrl+C would interrupt a console
+
+            Report(EngineState.Thinking, "读不到文本，改用剪贴板读取已输入的内容…");
+            var saved = ClipboardText.Save();
+            uint seq0 = ClipboardText.Sequence;
+            bool remote = _kb.IsKeyMode;
+            string text = null;
+            try
+            {
+                _kb.SelectToStart();
+                _lastKeyMs = Now;
+                SleepPlain(remote ? 250 : 90);
+                _kb.Copy();
+                _lastKeyMs = Now;
+                long until = Now + (remote ? 3000 : 1500);    // remote clipboard sync takes a moment
+                while (Now < until && ClipboardText.Sequence == seq0) SleepPlain(25);
+                if (ClipboardText.Sequence != seq0)
+                {
+                    SleepPlain(remote ? 150 : 50);           // the owner may still be adding formats
+                    text = ClipboardText.GetText();
+                }
+            }
+            finally
+            {
+                // → collapses the selection to its end, which is where the caret was.
+                _kb.Right();
+                _lastKeyMs = Now;
+                Thread.Sleep(remote ? 200 : 60);
+                ClipboardText.Restore(saved);
+            }
+            before = text;
+            return text != null;
+        }
+
+        private static bool IsTerminal(IntPtr hwnd)
+        {
+            var sb = new System.Text.StringBuilder(128);
+            GetClassName(hwnd, sb, 128);
+            string c = sb.ToString();
+            return c == "ConsoleWindowClass" || c == "CASCADIA_HOSTING_WINDOW_CLASS" || c == "mintty" ||
+                   c == "VirtualConsoleClass" || c == "PuTTY";
+        }
+
+        /// <summary>
+        /// Screenshot check: OCR the target window twice at different zoom levels and fix only the
+        /// English words both readings agree are wrong. Returns false if our text can't be found.
+        /// </summary>
+        private bool TryProofreadByOcr(List<string> want, out List<string> w, out List<Hunk> hunks, out int uncertain)
+        {
+            w = null; hunks = null; uncertain = 0;
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero || IsOwnWindow(fg) || !ScreenOcr.Available) return false;
+            if (!GetWindowRect(fg, out RECT r)) return false;
+            var area = System.Drawing.Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+            area.Intersect(System.Windows.Forms.SystemInformation.VirtualScreen);
+            // Only what's above the caret line: our text ends there, anything below is other UI.
+            var c = _baseline;
+            if (_caretTracks && c.CaretOk && c.Y > area.Top && c.Y < area.Bottom)
+                area.Height = Math.Min(area.Height, c.Y + Math.Max(c.H, 16) + 4 - area.Top);
+
+            // Something of ours on top of the target (our window shows the source text!)?
+            // Then render the target window by itself instead of grabbing the screen.
+            bool covered = false;
+            IntPtr me = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
+            if (me != IntPtr.Zero && IsWindowVisible(me) && !IsIconic(me) && GetWindowRect(me, out RECT mr) &&
+                System.Drawing.Rectangle.FromLTRB(mr.Left, mr.Top, mr.Right, mr.Bottom).IntersectsWith(area))
+                covered = true;
+
+            Report(EngineState.Thinking, "读不到文本，改用截图识别核对…");
+            var wantWords = new List<string>();
+            var spans = OcrMatch.WordSpans(want);
+            foreach (var (s, e) in spans) wantWords.Add(string.Concat(want.GetRange(s, e - s)));
+
+            var pages = ReadPagesByOcr(fg, area, covered, wantWords);
+            if (pages == null) return false;
+
+            // A fix is made only if both readings saw the very same wrong word and nothing
+            // unsure lies between it and the caret.
+            var fixes = OcrMatch.Agree(pages, out uncertain);
+
+            // What we believe is on screen: the wanted text with those words as seen.
+            w = new List<string>(want);
+            fixes.Sort((x, y) => y.WordStart.CompareTo(x.WordStart));
+            int changed = 0;
+            foreach (var f in fixes)
+            {
+                int s = spans[f.WordStart].start, e = spans[f.WordEnd - 1].end;
+                var seenUnits = Split(f.Seen);
+                w.RemoveRange(s, e - s);
+                w.InsertRange(s, seenUnits);
+                changed += Math.Max(e - s, seenUnits.Count);
+            }
+            hunks = fixes.Count == 0 ? new List<Hunk>() : DiffHunks(w, want, changed * 2 + 10, true);
+            if (hunks == null) { hunks = new List<Hunk>(); uncertain += fixes.Count; }
+            return true;
+        }
+
+        private const int MaxOcrPages = 15;
+
+        /// <summary>
+        /// Reads our text off the screen, page by page. The first page is what's visible now (it
+        /// ends at the caret); if our text starts further up, the mouse wheel scrolls up a bit
+        /// more than half a screen at a time, and every page is matched against the part of the
+        /// text just before the page below it. While one page is being recognised the next one is
+        /// already scrolled to and captured. Afterwards the view and the mouse are put back.
+        /// Returns null if our text isn't found on the first page.
+        /// </summary>
+        private List<OcrMatch.Result[]> ReadPagesByOcr(IntPtr fg, System.Drawing.Rectangle area, bool covered, List<string> wantWords)
+        {
+            var pages = new List<OcrMatch.Result[]>();
+            ScreenOcr.Reading[] read0;
+            System.Drawing.Bitmap prev = ScreenOcr.Capture(area, covered, fg);
+            if (prev == null) return null;
+            read0 = ScreenOcr.ReadAll(prev);
+            var p0 = new[] { OcrMatch.Compare(read0[0]?.Words, wantWords), OcrMatch.Compare(read0[1]?.Words, wantWords) };
+            if (p0[0] == null && p0[1] == null) { prev.Dispose(); return null; }
+            pages.Add(p0);
+
+            int FirstOf(OcrMatch.Result[] p) => Math.Max(p[0]?.FirstWord ?? 0, p[1]?.FirstWord ?? 0);
+            int firstWord = FirstOf(p0);
+            if (firstWord <= 0) { prev.Dispose(); return pages; }   // all of it was on screen
+
+            // ---- more text above: scroll up page by page
+            Report(EngineState.Thinking, "截图识别：内容较长，向上滚动继续核对…");
+            bool remote = _kb.IsKeyMode;
+            double lineH = Math.Max(read0[0]?.LineHeight ?? 0, read0[1]?.LineHeight ?? 0);
+            if (lineH < 8) lineH = _baseline.CaretOk && _baseline.H > 8 ? _baseline.H : 20;
+            uint wheelLines = 3;
+            if (SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, out uint wl, 0) && wl > 0 && wl < 100) wheelLines = wl;
+            int notches = Math.Max(1, (int)(area.Height * 0.55 / (lineH * wheelLines)));
+            int visible = Math.Max(1, wantWords.Count - firstWord);
+            int pagesWanted = Math.Min(MaxOcrPages, 1 + (int)Math.Ceiling(firstWord / Math.Max(1.0, visible * 0.5)));
+
+            GetCursorPos(out POINT mouse0);
+            var c = _baseline;
+            int mx = area.Left + area.Width / 2, my = area.Top + area.Height / 2;
+            if (_caretTracks && c.CaretOk && area.Contains(c.X, c.Y - (int)lineH))
+            { mx = c.X; my = c.Y - (int)lineH; }   // over the text box itself (chat apps: the box scrolls, not the window)
+            int scrolled = 0;
+
+            // Recognition runs in the background, one page after another, in page order; each page
+            // is compared against the text just before the first word the page below it showed.
+            object gate = new object();
+            int nextEnd = Math.Min(wantWords.Count, firstWord + 4);   // a few words of overlap
+            bool chainDone = false;
+            Task chain = Task.CompletedTask;
+            try
+            {
+                SetCursorPos(mx, my);
+                for (int page = 1; page < pagesWanted; page++)
+                {
+                    lock (gate) if (chainDone) break;
+                    Wheel(notches);
+                    scrolled += notches;
+                    SleepPlain(remote ? 500 : 220);              // let it repaint (remote: let the frame arrive)
+                    var shot = ScreenOcr.Capture(area, covered, fg);
+                    if (shot != null && ScreenOcr.Same(shot, prev))
+                    {
+                        SleepPlain(remote ? 600 : 200);          // maybe just slow to repaint
+                        shot.Dispose();
+                        shot = ScreenOcr.Capture(area, covered, fg);
+                        if (shot == null || ScreenOcr.Same(shot, prev)) { shot?.Dispose(); break; }   // reached the top
+                    }
+                    if (shot == null) break;
+
+                    // Keep at most one page waiting: let the previous page finish first.
+                    WaitTask(chain);
+                    prev.Dispose();
+                    prev = shot;
+                    var img = (System.Drawing.Bitmap)shot.Clone();
+                    chain = chain.ContinueWith(_ =>
+                    {
+                        try
+                        {
+                            int end;
+                            lock (gate) { if (chainDone) return; end = nextEnd; }
+                            var rd = ScreenOcr.ReadAll(img);
+                            var p = new[] { OcrMatch.Compare(rd[0]?.Words, wantWords, end), OcrMatch.Compare(rd[1]?.Words, wantWords, end) };
+                            lock (gate)
+                            {
+                                if (p[0] == null && p[1] == null) { chainDone = true; return; }   // lost track: stop here
+                                pages.Add(p);
+                                int fw = FirstOf(p);
+                                if (fw <= 0 || fw >= end) chainDone = true;                     // reached the start / no progress
+                                else nextEnd = Math.Min(end, fw + 4);
+                            }
+                        }
+                        finally { img.Dispose(); }
+                    }, TaskScheduler.Default);
+                }
+                WaitTask(chain);
+            }
+            finally
+            {
+                prev.Dispose();
+                // Put the view and the mouse back where they were.
+                for (int left = scrolled; left > 0; left -= 10) { Wheel(-Math.Min(10, left)); Thread.Sleep(30); }
+                SetCursorPos(mouse0.X, mouse0.Y);
+                if (scrolled > 0) Thread.Sleep(remote ? 400 : 150);
+            }
+            lock (gate) return new List<OcrMatch.Result[]>(pages);
+        }
+
+        /// <summary>Waits for background work while still honouring Stop.</summary>
+        private void WaitTask(Task t)
+        {
+            while (!t.Wait(50))
+                if (_stop) throw new OperationCanceledException();
         }
 
         /// <summary>

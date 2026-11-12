@@ -33,7 +33,7 @@ namespace HumanTyper
         private NumericUpDown _numPPMin, _numPPMax;
 
         // control
-        private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof;
+        private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof, _chkClipProof, _chkOcrProof;
         private NumericUpDown _numCountdown;
         private ComboBox _cboNewline, _cboMode, _cboImeState, _cboImeToggle;
         private LinkLabel _lnkDriver;
@@ -183,7 +183,13 @@ namespace HumanTyper
             tCtl.Controls.Add(Row(Lbl("倒计时"), _numCountdown, Lbl("秒    换行方式"), _cboNewline, _chkMin, _chkTop));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
             _chkProof = new CheckBox { Text = "打完后从头核对一遍，有错就用键盘移动光标修改", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
+            _chkClipProof = new CheckBox { Text = "剪贴板复制", AutoSize = true, Margin = new Padding(3, 6, 6, 3) };
+            _chkOcrProof = new CheckBox { Text = "截图识别（英文）", AutoSize = true, Margin = new Padding(3, 6, 6, 3) };
+            _chkProof.CheckedChanged += (s, e) => { _chkClipProof.Enabled = _chkOcrProof.Enabled = _chkProof.Checked; };
             tCtl.Controls.Add(Row(_chkAutoPause, _chkProof));
+            tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
+            tCtl.Controls.Add(Row(Lbl("读不到目标文本时改用"), _chkClipProof, _chkOcrProof,
+                Lbl("（复制完会还原剪贴板；截图识别只改两次识别一致的英文错词）", true)));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
 
             // keyboard / remote mode
@@ -307,7 +313,7 @@ namespace HumanTyper
             _cboImeState.SelectedIndex = s.RemoteImeChinese ? 0 : 1;
             _cboImeToggle.SelectedIndex = s.ImeToggleKey == 1 ? 1 : 0;
             UpdateModeUi();
-            _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
+            _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkClipProof.Checked = s.ClipboardProofread; _chkOcrProof.Checked = s.OcrProofread; _chkClipProof.Enabled = _chkOcrProof.Enabled = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
             SetNum(_numCountdown, s.Countdown);
             _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
             _hkStart.Hotkey = s.StartPauseKey; _hkStop.Hotkey = s.StopKey; _hkRestart.Hotkey = s.RestartKey;
@@ -334,7 +340,7 @@ namespace HumanTyper
             s.InputMode = Math.Max(0, _cboMode.SelectedIndex);
             s.RemoteImeChinese = _cboImeState.SelectedIndex != 1;
             s.ImeToggleKey = _cboImeToggle.SelectedIndex == 1 ? 1 : 0;
-            s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
+            s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.ClipboardProofread = _chkClipProof.Checked; s.OcrProofread = _chkOcrProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
             s.Countdown = (int)_numCountdown.Value;
             s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;

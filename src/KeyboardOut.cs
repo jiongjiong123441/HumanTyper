@@ -21,7 +21,8 @@ namespace HumanTyper
     internal sealed class KeyboardOut
     {
         public const ushort SC_LSHIFT = 0x2A, SC_LCTRL = 0x1D, SC_SPACE = 0x39, SC_ENTER = 0x1C,
-                            SC_BACK = 0x0E, SC_TAB = 0x0F, SC_LEFT = 0x4B, SC_RIGHT = 0x4D;
+                            SC_BACK = 0x0E, SC_TAB = 0x0F, SC_LEFT = 0x4B, SC_RIGHT = 0x4D,
+                            SC_HOME = 0x47, SC_C = 0x2E;
 
         private readonly Random _rnd = new Random();
         public InputMode Mode { get; }
@@ -83,6 +84,25 @@ namespace HumanTyper
             KeyTap(SC_SPACE, false, false);
             Thread.Sleep(_rnd.Next(20, 50));
             Key(SC_LCTRL, false, true, 0x11);
+        }
+
+        /// <summary>Ctrl+Shift+Home: selects everything from the caret back to the start of the text.</summary>
+        public void SelectToStart() => Chord(0x24, SC_HOME, true, true, true);
+
+        /// <summary>Ctrl+C.</summary>
+        public void Copy() => Chord(0x43, SC_C, false, true, false);
+
+        /// <summary>A key with Ctrl and/or Shift held (modifiers pressed first, released last).</summary>
+        private void Chord(ushort vk, ushort sc, bool extended, bool ctrl, bool shift)
+        {
+            if (ctrl) { Key(SC_LCTRL, false, false, 0x11); Thread.Sleep(_rnd.Next(30, 60)); }
+            if (shift) { Key(SC_LSHIFT, false, false, VK_SHIFT); Thread.Sleep(_rnd.Next(30, 60)); }
+            Key(sc, extended, false, vk);
+            Thread.Sleep(_rnd.Next(40, 80));
+            Key(sc, extended, true, vk);
+            Thread.Sleep(_rnd.Next(20, 50));
+            if (shift) { Key(SC_LSHIFT, false, true, VK_SHIFT); Thread.Sleep(_rnd.Next(15, 40)); }
+            if (ctrl) Key(SC_LCTRL, false, true, 0x11);
         }
 
         /// <summary>Presses a key by its scan code, optionally with Shift held.</summary>

@@ -116,6 +116,39 @@ namespace HumanTyper
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int max);
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetCursorPos(int x, int y);
+
+        [DllImport("user32.dll")]
+        public static extern bool SystemParametersInfo(uint action, uint param, out uint value, uint winIni);
+
+        public const int INPUT_MOUSE = 0;
+        public const uint MOUSEEVENTF_WHEEL = 0x0800;
+        public const uint SPI_GETWHEELSCROLLLINES = 0x0068;
+
+        /// <summary>Turns the mouse wheel by the given number of notches (positive = up).</summary>
+        public static void Wheel(int notches)
+        {
+            var inp = new INPUT { type = INPUT_MOUSE };
+            inp.U.mi = new MOUSEINPUT { mouseData = unchecked((uint)(notches * 120)), dwFlags = MOUSEEVENTF_WHEEL, dwExtraInfo = InjectMarker };
+            SendInput(1, new[] { inp }, Marshal.SizeOf(typeof(INPUT)));
+        }
+
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 
