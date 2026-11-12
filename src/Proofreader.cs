@@ -17,6 +17,7 @@ namespace HumanTyper
         internal sealed class Hunk
         {
             public int AStart, AEnd;                 // range in the document window to delete
+            public int BStart;                       // where Insert starts in the wanted text
             public List<string> Insert = new List<string>();
         }
 
@@ -99,10 +100,69 @@ namespace HumanTyper
                 }
 
                 Report(EngineState.Running, $"发现 {hunks.Count} 处错误，正在修改…");
-                ApplyHunks(hunks, w.Count);
+                if (_kb.IsKeyMode)
+                {
+                    // Retype Chinese fixes as whole words (better IME guesses), and if the same spot
+                    // is still wrong on a later pass, pick the 2nd / 3rd candidate instead of the 1st.
+                    ExpandToWords(hunks, w, want);
+                    _commitKey = pass == 1 ? " " : pass.ToString();
+                }
+                try { ApplyHunks(hunks, w.Count); }
+                finally { _commitKey = " "; }
                 totalFixed += hunks.Count;
             }
             _proofMsg = $"已修正 {totalFixed} 处，但仍有差异，请人工检查";
+        }
+
+        /// <summary>
+        /// Widens Chinese fixes to the surrounding word (from the phrase table) or at least one
+        /// neighbouring character, so the IME gets context: "长得" instead of a lone "得".
+        /// Only widens over text that is already correct and never into another fix.
+        /// </summary>
+        internal static void ExpandToWords(List<Hunk> hunks, List<string> a, List<string> b)
+        {
+            for (int i = 0; i < hunks.Count; i++)
+            {
+                var h = hunks[i];
+                int bEnd = h.BStart + h.Insert.Count;
+                if (h.Insert.Count == 0 || !h.Insert.TrueForAll(IsCjk)) continue;
+                int prevEnd = i > 0 ? hunks[i - 1].AEnd : 0;
+                int nextStart = i + 1 < hunks.Count ? hunks[i + 1].AStart : a.Count;
+
+                int bestL = 0, bestR = 0;
+                bool found = false;
+                for (int len = 4; len >= 2 && !found; len--)
+                {
+                    for (int s = Math.Max(0, bEnd - len); s <= h.BStart && !found; s++)
+                    {
+                        int e = s + len;
+                        if (e < bEnd || e > b.Count) continue;
+                        int l = h.BStart - s, r = e - bEnd;
+                        if (l == 0 && r == 0) continue;
+                        if (!CanWiden(a, b, h, l, r, prevEnd, nextStart)) continue;
+                        if (!Pinyin.IsPhrase(b, s, len)) continue;
+                        bestL = l; bestR = r; found = true;
+                    }
+                }
+                if (!found && CanWiden(a, b, h, 1, 0, prevEnd, nextStart)) { bestL = 1; found = true; }
+                if (!found) continue;
+
+                h.Insert.InsertRange(0, b.GetRange(h.BStart - bestL, bestL));
+                h.Insert.AddRange(b.GetRange(bEnd, bestR));
+                h.AStart -= bestL; h.AEnd += bestR; h.BStart -= bestL;
+            }
+        }
+
+        private static bool CanWiden(List<string> a, List<string> b, Hunk h, int l, int r, int prevEnd, int nextStart)
+        {
+            int bEnd = h.BStart + h.Insert.Count;
+            if (h.BStart - l < 0 || bEnd + r > b.Count) return false;
+            if (h.AStart - l < prevEnd || h.AEnd + r > nextStart) return false;
+            for (int k = 1; k <= l; k++)
+                if (!IsCjk(b[h.BStart - k]) || a[h.AStart - k] != b[h.BStart - k]) return false;
+            for (int k = 0; k < r; k++)
+                if (!IsCjk(b[bEnd + k]) || a[h.AEnd + k] != b[bEnd + k]) return false;
+            return true;
         }
 
         /// <summary>Walks back from the end, fixing the last mistake first so earlier positions stay valid.</summary>
@@ -122,11 +182,27 @@ namespace HumanTyper
                     caret--;
                     Wait(Math.Max(45, LatinBaseMs * 0.6 * Jitter()));
                 }
-                foreach (var s in h.Insert)
+                for (int k = 0; k < h.Insert.Count;)
                 {
+                    string s = h.Insert[k];
+                    if (_kb.IsKeyMode && IsCjk(s))
+                    {
+                        // a run of Chinese: type it as one pinyin word
+                        int e = k;
+                        while (e < h.Insert.Count && IsCjk(h.Insert[e])) e++;
+                        var syl = Pinyin.Of(h.Insert, k, e - k);
+                        if (Array.IndexOf(syl, null) < 0)
+                        {
+                            TypePinyin(syl, e - k);
+                            caret += e - k;
+                            k = e;
+                            continue;
+                        }
+                    }
                     Wait(IsCjk(s) ? CjkBaseMs * 0.7 * Jitter() : LatinBaseMs * Jitter());
                     Key(s);
                     caret++;
+                    k++;
                 }
                 newEnd += h.Insert.Count - (h.AEnd - h.AStart);
             }
@@ -238,7 +314,7 @@ namespace HumanTyper
                 if (d > 0)
                 {
                     if (cx == px) ops.Add((2, n - cx, m - 1 - py));   // insert B(py)
-                    else ops.Add((1, n - 1 - px, -1));              // delete A(px)
+                    else ops.Add((1, n - 1 - px, m - py));          // delete A(px); bi = position in b
                 }
                 cx = px; cy = py;
             }
@@ -250,7 +326,7 @@ namespace HumanTyper
                 if (op == 0) { cur = null; continue; }
                 if (cur == null)
                 {
-                    cur = new Hunk { AStart = ai, AEnd = ai };
+                    cur = new Hunk { AStart = ai, AEnd = ai, BStart = bi };
                     hunks.Add(cur);
                 }
                 if (op == 1) { cur.AStart = Math.Min(cur.AStart, ai); cur.AEnd = Math.Max(cur.AEnd, ai + 1); }

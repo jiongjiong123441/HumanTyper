@@ -106,6 +106,10 @@ namespace HumanTyper
         [DllImport("user32.dll", SetLastError = true)]
         public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
+        public const uint KEYEVENTF_SCANCODE = 0x0008;
+        [DllImport("user32.dll")]
+        public static extern short GetKeyState(int nVirtKey);
+
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 
