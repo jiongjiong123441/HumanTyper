@@ -49,13 +49,13 @@ namespace HumanTyper
             var want = new List<string>(_u.Count);
             foreach (var x in _u) want.Add(NormUnit(x));
 
-            int totalFixed = 0;
-            for (int pass = 1; pass <= 3; pass++)
+            int totalFixed = 0, skippedCn = 0;
+            for (int pass = 1; pass <= 2; pass++)
             {
                 Report(EngineState.Thinking, pass == 1 ? "正在从头核对一遍…" : "再核对一遍…");
-                Wait(Rand(700, 1500));
+                Wait(Rand(200, 450));
                 Gate();
-                SleepPlain(250);   // let the target finish processing our keystrokes
+                SleepPlain(120);   // let the target finish processing our keystrokes
 
                 if (!TryReadTextBeforeCaret(out string before))
                 {
@@ -85,9 +85,19 @@ namespace HumanTyper
                     _proofMsg = "与原文差异过大（光标可能不在文末），已跳过自动修正";
                     return;
                 }
+                if (_kb.IsKeyMode)
+                {
+                    // Typing through an IME: a Chinese character swapped for another one is just the
+                    // IME picking a homophone. Let it be — only fix missing/extra text and non-Chinese.
+                    int before0 = hunks.Count;
+                    hunks.RemoveAll(h => h.Insert.Count > 0 && h.AEnd - h.AStart == h.Insert.Count &&
+                                         h.Insert.TrueForAll(IsCjk) && w.GetRange(h.AStart, h.AEnd - h.AStart).TrueForAll(IsCjk));
+                    if (pass == 1) skippedCn = before0 - hunks.Count;
+                }
                 if (hunks.Count == 0)
                 {
-                    _proofMsg = totalFixed > 0 ? $"核对完成，已修正 {totalFixed} 处" : "核对完成，没有发现错误";
+                    string skip = skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "";
+                    _proofMsg = (totalFixed > 0 ? $"核对完成，已修正 {totalFixed} 处" : "核对完成，没有发现错误") + skip;
                     return;
                 }
 
@@ -100,18 +110,13 @@ namespace HumanTyper
                 }
 
                 Report(EngineState.Running, $"发现 {hunks.Count} 处错误，正在修改…");
-                if (_kb.IsKeyMode)
-                {
-                    // Retype Chinese fixes as whole words (better IME guesses), and if the same spot
-                    // is still wrong on a later pass, pick the 2nd / 3rd candidate instead of the 1st.
-                    ExpandToWords(hunks, w, want);
-                    _commitKey = pass == 1 ? " " : pass.ToString();
-                }
-                try { ApplyHunks(hunks, w.Count); }
-                finally { _commitKey = " "; }
+                // Missing Chinese gets retyped as a whole word so the IME has context.
+                if (_kb.IsKeyMode) ExpandToWords(hunks, w, want);
+                _fixing = true;
+                try { ApplyHunks(hunks, w.Count); } finally { _fixing = false; }
                 totalFixed += hunks.Count;
             }
-            _proofMsg = $"已修正 {totalFixed} 处，但仍有差异，请人工检查";
+            _proofMsg = $"已修正 {totalFixed} 处" + (skippedCn > 0 ? $"（{skippedCn} 处中文选词差异未处理）" : "");
         }
 
         /// <summary>
@@ -173,14 +178,14 @@ namespace HumanTyper
             for (int i = hunks.Count - 1; i >= 0; i--)
             {
                 var h = hunks[i];
-                Wait(Rand(250, 700));                    // spot it
+                Wait(Rand(80, 200));                     // spot it
                 MoveCaret(ref caret, h.AEnd);
-                Wait(Rand(150, 400));
+                Wait(Rand(50, 120));
                 for (int k = h.AEnd; k > h.AStart; k--)
                 {
                     Key("\b");
                     caret--;
-                    Wait(Math.Max(45, LatinBaseMs * 0.6 * Jitter()));
+                    Wait(Math.Max(30, LatinBaseMs * 0.4 * Jitter()));
                 }
                 for (int k = 0; k < h.Insert.Count;)
                 {
@@ -199,14 +204,14 @@ namespace HumanTyper
                             continue;
                         }
                     }
-                    Wait(IsCjk(s) ? CjkBaseMs * 0.7 * Jitter() : LatinBaseMs * Jitter());
+                    Wait(IsCjk(s) ? CjkBaseMs * 0.5 * Jitter() : LatinBaseMs * 0.6 * Jitter());
                     Key(s);
                     caret++;
                     k++;
                 }
                 newEnd += h.Insert.Count - (h.AEnd - h.AStart);
             }
-            Wait(Rand(200, 500));
+            Wait(Rand(60, 150));
             MoveCaret(ref caret, newEnd);                // back to where we stopped typing
         }
 
@@ -220,7 +225,7 @@ namespace HumanTyper
                 caret += left ? -1 : 1;
                 _unsampled += left ? -1 : 1;
                 _lastKeyMs = Now;
-                Wait(Rand(25, 70));
+                Wait(Rand(8, 20));
             }
         }
 
