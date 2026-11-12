@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using static HumanTyper.NativeMethods;
 
@@ -196,8 +197,8 @@ namespace HumanTyper
             _cboImeState.Items.AddRange(new object[] { "中文模式", "英文模式" });
             _cboImeToggle = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 100, Margin = new Padding(3, 4, 3, 3) };
             _cboImeToggle.Items.AddRange(new object[] { "Shift", "Ctrl+Space" });
-            _lnkDriver = new LinkLabel { Text = "驱动安装说明", AutoSize = true, Margin = new Padding(8, 7, 3, 3) };
-            _lnkDriver.LinkClicked += (s, e) => ShowDriverHelp();
+            _lnkDriver = new LinkLabel { Text = "一键安装驱动", AutoSize = true, Margin = new Padding(8, 7, 3, 3) };
+            _lnkDriver.LinkClicked += (s, e) => OnDriverLink();
             _cboMode.SelectedIndexChanged += (s, e) => UpdateModeUi();
             tCtl.Controls.Add(Row(Lbl("输入方式"), _cboMode, _lnkDriver));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
@@ -338,37 +339,95 @@ namespace HumanTyper
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;
         }
 
-        private void UpdateModeUi()
+        private enum DriverState { NotInstalled, NeedsReboot, Ready }
+
+        private static DriverState GetDriverState()
+        {
+            if (KeyboardOut.Interception.IsAvailable()) return DriverState.Ready;
+            return DriverSetup.DriverInstalled && KeyboardOut.Interception.DllPresent ? DriverState.NeedsReboot : DriverState.NotInstalled;
+        }
+
+        private void UpdateModeUi(bool setStatus = true)
         {
             if (_cboMode == null || _rowIme == null) return;
             int mode = _cboMode.SelectedIndex;
             _rowIme.Enabled = mode != 0;
             _lnkDriver.Visible = mode == 2;
-            if (_lblStatus == null) return;
+            if (mode != 2 && !setStatus) return;
+
+            var state = mode == 2 ? GetDriverState() : DriverState.NotInstalled;
+            _lnkDriver.Text = state == DriverState.Ready ? "卸载驱动" : state == DriverState.NeedsReboot ? "现在重启" : "一键安装驱动";
+            if (_lblStatus == null || !setStatus) return;
             if (mode == 1)
                 SetStatus("键盘扫描码模式：发送和实体键盘一样的按键，适用于 ToDesk、向日葵、远程桌面、虚拟机等。中文会以拼音输入，请确认目标电脑的输入法设置。");
             else if (mode == 2)
-                SetStatus(KeyboardOut.Interception.IsAvailable()
-                    ? "驱动级虚拟键盘已就绪：按键从键盘驱动层发出，和实体键盘无法区分。"
-                    : "驱动级模式不可用：" + KeyboardOut.Interception.LastError + " — 点“驱动安装说明”查看步骤。");
+                SetStatus(state == DriverState.Ready ? "驱动级虚拟键盘已就绪：按键从键盘驱动层发出，和实体键盘无法区分。"
+                        : state == DriverState.NeedsReboot ? "键盘驱动已安装，重启电脑后生效。"
+                        : "驱动级模式需要先安装键盘驱动 — 点右边的“一键安装驱动”，同意管理员授权后自动装好。");
         }
 
-        private void ShowDriverHelp()
+        private void OnDriverLink()
         {
-            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
-            string msg =
-                "驱动级虚拟键盘使用开源的 Interception 键盘驱动（作者 oblitum，非商业用途免费）。\n\n" +
-                "1. 打开 https://github.com/oblitum/Interception/releases 下载 Interception.zip 并解压。\n" +
-                "2. 以管理员身份打开命令提示符，进入解压目录的 \"command line installer\" 文件夹，运行：\n" +
-                "       install-interception.exe /install\n" +
-                "3. 重启电脑。\n" +
-                "4. 把解压目录中 library\\x64\\interception.dll 复制到 HumanTyper.exe 所在目录：\n" +
-                "       " + exeDir + "\n\n" +
-                "卸载：同样以管理员身份运行 install-interception.exe /uninstall 后重启。\n\n" +
-                "是否现在打开下载页面？";
-            if (MessageBox.Show(this, msg, "安装 Interception 驱动", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            switch (GetDriverState())
             {
-                try { System.Diagnostics.Process.Start("https://github.com/oblitum/Interception/releases"); } catch { }
+                case DriverState.Ready: InstallDriver(false); break;
+                case DriverState.NeedsReboot: AskReboot("键盘驱动已安装，需要重启电脑才能生效。"); break;
+                default: InstallDriver(true); break;
+            }
+        }
+
+        private async void InstallDriver(bool install)
+        {
+            string ask = install
+                ? "将自动安装 Interception 键盘驱动（开源驱动，非商业用途免费）：\n\n" +
+                  "• 从 Interception 官方 GitHub 下载（约 380 KB），并校验文件完整性\n" +
+                  "• 接下来 Windows 会询问是否允许更改，请点“是”\n" +
+                  "• 装好后需要重启电脑一次\n\n继续安装吗？"
+                : "将卸载 Interception 键盘驱动（需要管理员授权，卸载后需重启电脑）。\n\n继续卸载吗？";
+            if (MessageBox.Show(this, ask, install ? "一键安装驱动" : "卸载驱动", MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Question) != DialogResult.Yes) return;
+
+            _lnkDriver.Enabled = false;
+            _btnStart.Enabled = false;
+            try
+            {
+                await Task.Run(() => DriverSetup.EnsureFiles(m => BeginInvokeSafe(() => SetStatus(m))));
+                SetStatus("请在弹出的 Windows 授权窗口中点“是”…");
+                bool approved = await Task.Run(() => DriverSetup.RunInstaller(install));
+                if (!approved)
+                {
+                    SetStatus("已取消：需要管理员授权才能" + (install ? "安装" : "卸载") + "驱动。");
+                    return;
+                }
+                if (install && !DriverSetup.DriverInstalled)
+                {
+                    SetStatus("驱动安装没有成功，请重试；如果杀毒软件拦截了，请允许后再试。");
+                    return;
+                }
+                SetStatus(install ? "驱动安装完成，重启电脑后即可使用驱动级输入。" : "驱动已卸载，重启电脑后完全移除。");
+                AskReboot(install ? "驱动安装完成，需要重启电脑才能生效。" : "驱动已卸载，需要重启电脑才能完全移除。");
+            }
+            catch (Exception ex)
+            {
+                SetStatus((install ? "驱动安装失败：" : "驱动卸载失败：") + ex.Message);
+            }
+            finally
+            {
+                _lnkDriver.Enabled = true;
+                _btnStart.Enabled = !_engine.IsBusy && !_counting;
+                UpdateModeUi(setStatus: false);
+            }
+        }
+
+        private void AskReboot(string why)
+        {
+            if (MessageBox.Show(this, why + "\n\n现在重启电脑吗？（请先保存其他程序里的工作）", "需要重启",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                ReadUiToSettings();
+                _settings.Save();
+                try { DriverSetup.Reboot(); }
+                catch (Exception ex) { SetStatus("无法自动重启：" + ex.Message + "，请手动重启电脑。"); }
             }
         }
 

@@ -95,7 +95,11 @@ ToDesk、向日葵、Windows 远程桌面、VNC、虚拟机这类窗口只转发
 
 输入法偶尔会选成同音字，属于正常现象。
 
-**安装驱动级模式**（可选）：点界面上的"驱动安装说明"，按提示下载 Interception、以管理员身份运行 `install-interception.exe /install`、重启电脑，再把 `library\x64\interception.dll` 放到 `HumanTyper.exe` 同目录即可。Interception 仅限非商业用途免费，HumanTyper 不附带该驱动。
+**安装驱动级模式**（可选）：把"输入方式"选成"驱动级虚拟键盘"，点旁边的 **一键安装驱动**，在 Windows 弹出的授权窗口点"是"，装好后按提示重启电脑即可。
+
+- 程序会从 [Interception 官方 Release](https://github.com/oblitum/Interception/releases/tag/v1.0.1) 下载安装包，并校验 SHA-256，校验不通过不会安装；文件放在 `%LOCALAPPDATA%\HumanTyper\Interception`。
+- 不想用了：同一位置点 **卸载驱动**，授权后重启。
+- Interception 仅限非商业用途免费，HumanTyper 本身不附带该驱动。
 
 ## 参数说明
 
