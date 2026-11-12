@@ -34,9 +34,10 @@ HumanTyper 把一段文字**按人的节奏**敲进任意输入框：节奏忽�
 | 💭 **思考停顿** | 每隔几个词短停、每隔几句话长停、换段落停得更久，频率和时长都能调 |
 | 🀄 **中英文混排** | 中文按 1–4 字一个词，先"拼音"再整词上屏；英文按 WPM 计速；支持 emoji |
 | ⏸️ **快捷键 + 按钮** | 开始 / 暂停 / 继续 / 停止 / 重新开始，按钮和全局快捷键都能用，快捷键可自定义 |
+| 🖥️ **远程桌面可用** | 键盘扫描码 / 驱动级虚拟键盘模式，发出和实体键盘一样的按键，ToDesk、向日葵、远程桌面、虚拟机里都能打字，中文自动打拼音选词 |
 | 🖱️ **自动暂停 / 继续** | 切走窗口或挪动光标就自动暂停，回到原来的位置自动接着打 |
 | 🔍 **打完核对** | 读回目标框里的实际文字逐字比对，用方向键 + 退格 + 重打修正，只动自己打的那一段 |
-| 📦 **单文件绿色版** | 一个 ~50 KB 的 exe，无需安装，Windows 10/11 自带运行环境 |
+| 📦 **单文件绿色版** | 一个 ~200 KB 的 exe（内置拼音表），无需安装，Windows 10/11 自带运行环境 |
 
 ## 快速上手
 
@@ -74,6 +75,27 @@ HumanTyper 把一段文字**按人的节奏**敲进任意输入框：节奏忽�
 3. 改完回到末尾，再核对一遍，状态栏显示"已修正 N 处"。
 
 只会改动本次打出的那一段，输入框里原有的内容不受影响；差异过大（比如光标被挪到了别处）时会放弃修改以免误伤。
+键盘模式下，输入法选成了同音的其他汉字（如"长得"变"长的"）不会去纠结修改，只修漏字、多字和非中文内容。
+
+### 远程桌面 / 远控软件里使用
+
+ToDesk、向日葵、Windows 远程桌面、VNC、虚拟机这类窗口只转发**键盘按键**，不转发"直接上屏的字符"，所以要把"输入方式"改成键盘模式：
+
+| 输入方式 | 原理 | 适用 |
+| --- | --- | --- |
+| 标准（默认） | 直接发送 Unicode 字符，中文直接上屏 | 本机程序 |
+| 键盘扫描码 | 发送和实体键盘相同的扫描码（按下 / 抬起、Shift 组合） | ToDesk、向日葵、远程桌面、虚拟机等，无需安装任何东西 |
+| 驱动级虚拟键盘 | 通过 [Interception](https://github.com/oblitum/Interception) 键盘驱动从驱动层发出按键，与实体键盘无法区分 | 少数会屏蔽软件按键的程序；需要安装驱动 |
+
+**键盘模式下的中文**：按键只能产生字母，中文由**目标电脑上的中文输入法**打出。HumanTyper 会把中文转成拼音（内置 2.6 万字 + 多音词表，如"银行 → yinhang"），一个词一个词地敲拼音、按空格选第一个候选；遇到英文自动按 `Shift`（或 `Ctrl+Space`）切换中英文，中文标点（，。？！：“”……——）在中文模式下按对应键打出。使用前请：
+
+1. 目标电脑切到中文输入法（微软拼音、搜狗等）；
+2. 在"目标输入法开始时为"里选对它当前是**中文模式**还是**英文模式**；
+3. 如果你的输入法用 `Ctrl+Space` 切换中英文，把"中英切换键"改过来。
+
+输入法偶尔会选成同音字，属于正常现象。
+
+**安装驱动级模式**（可选）：点界面上的"驱动安装说明"，按提示下载 Interception、以管理员身份运行 `install-interception.exe /install`、重启电脑，再把 `library\x64\interception.dll` 放到 `HumanTyper.exe` 同目录即可。Interception 仅限非商业用途免费，HumanTyper 不附带该驱动。
 
 ## 参数说明
 
@@ -91,6 +113,9 @@ HumanTyper 把一段文字**按人的节奏**敲进任意输入框：节奏忽�
 | 控制 | 倒计时 | 3 秒 | 点"开始"后留给你切换窗口的时间 |
 | | 换行方式 | Enter | 聊天软件里 Enter 会直接发送，可改为 `Shift+Enter` |
 | | 开始时最小化 / 窗口置顶 | 关 | |
+| | 输入方式 | 标准 | 远程窗口请选"键盘扫描码"或"驱动级" |
+| | 目标输入法开始时为 | 中文模式 | 仅键盘模式，用于判断何时切换中英文 |
+| | 中英切换键 | Shift | 仅键盘模式，也可选 `Ctrl+Space` |
 
 所有设置自动保存在 `%APPDATA%\HumanTyper\settings.ini`。界面上还会实时显示字数和预计耗时。
 
@@ -99,7 +124,13 @@ HumanTyper 把一段文字**按人的节奏**敲进任意输入框：节奏忽�
 <details>
 <summary><b>中文输入法开着会不会打乱？</b></summary>
 
-不会。文字通过 Unicode 键盘事件直接发送，不经过输入法。极个别程序如果表现异常，把输入法切到英文模式即可。
+标准模式不会：文字通过 Unicode 键盘事件直接发送，不经过输入法。键盘模式则相反，正是借助输入法打中文，请按上文"远程桌面"一节设置好输入法状态。
+</details>
+
+<details>
+<summary><b>在 ToDesk / 向日葵 / 远程桌面里打不出字？</b></summary>
+
+把"输入方式"改为"键盘扫描码"。如果打出来的中文变成了拼音字母，说明目标电脑没在用中文输入法或处于英文模式——切换后在"目标输入法开始时为"里选对状态。还不行可以试试"驱动级虚拟键盘"。
 </details>
 
 <details>
@@ -153,11 +184,15 @@ HumanTyper/
 │  ├─ MainForm.cs        界面、全局快捷键、倒计时
 │  ├─ TypingEngine.cs    打字引擎：节奏、错字、思考停顿、暂停/继续判断、键盘发送
 │  ├─ Proofreader.cs     打完核对：读回文本、差异比对、用键盘修正
+│  ├─ KeyboardOut.cs     键盘输出：Unicode / 扫描码 / Interception 驱动
+│  ├─ Pinyin.cs          汉字 → 拼音（含多音词），键盘模式下打拼音用
+│  ├─ Resources/pinyin.dat.gz  内置拼音表
 │  ├─ CaretProbe.cs      读取前台窗口的输入焦点和光标位置（Win32 / MSAA）
 │  ├─ InputMonitor.cs    低级键盘/鼠标钩子，检测用户手动操作
 │  ├─ HotkeyBox.cs       快捷键录入控件
 │  ├─ Settings.cs        设置的保存与读取
 │  └─ NativeMethods.cs   Win32 API 声明
+├─ tools/PinyinGen/      生成拼音表的小工具（数据来自 mozillazg/pinyin-data，MIT）
 ├─ docs/screenshot.png
 ├─ app.manifest
 └─ HumanTyper.csproj
@@ -165,7 +200,7 @@ HumanTyper/
 
 ### 工作原理（简述）
 
-- **输入**：`SendInput` + `KEYEVENTF_UNICODE` 逐字发送，换行/退格/方向键用虚拟键码。
+- **输入**：标准模式用 `SendInput` + `KEYEVENTF_UNICODE` 逐字发送；键盘模式按标准美式键盘把字符换成扫描码（含 Shift），用 `KEYEVENTF_SCANCODE` 或 Interception 驱动发出，中文转拼音交给目标输入法。
 - **节奏**：以设定速度为基准，乘以对数正态分布的随机抖动和缓慢漂移的"状态"系数，并按字符类型、常见双字母组合微调。
 - **暂停检测**：记录开始时的前台窗口、焦点控件和光标坐标；每次按键后立即重新采样光标；低级钩子发现真实（非注入）的鼠标点击或按键时暂停，直到窗口、焦点和光标都回到原位。
 - **核对**：开始前记下光标前已有多少文字，结束后用 UI Automation `TextPattern` 读回文本，对"本次输入的那一段"与原文做 Myers 差异比对，再从后往前逐处修正。
@@ -194,12 +229,12 @@ HumanTyper/
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 jiongjiong123441
+[MIT](LICENSE) © 2026 jiongjiong123441。第三方数据的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ---
 
 ## English
 
-**HumanTyper** is a small Windows tool that types text into any input box the way a person would: uneven rhythm, occasional typos that get noticed and backspaced, short pauses between words and longer ones between sentences and paragraphs. It supports Chinese (IME-like word-by-word commits) and English. It pauses automatically when you switch windows or move the caret and resumes once the caret is back. After finishing, it reads the text back, diffs it against the source, and fixes any differences using arrow keys, Backspace and retyping.
+**HumanTyper** is a small Windows tool that types text into any input box the way a person would: uneven rhythm, occasional typos that get noticed and backspaced, short pauses between words and longer ones between sentences and paragraphs. It supports Chinese (IME-like word-by-word commits) and English. It pauses automatically when you switch windows or move the caret and resumes once the caret is back. After finishing, it reads the text back, diffs it against the source, and fixes any differences using arrow keys, Backspace and retyping. A keyboard mode (scan codes, or the optional Interception driver) sends real key presses so it also works inside remote-desktop / remote-control windows such as ToDesk, Sunlogin, RDP and VMs; Chinese is then typed as pinyin through the remote IME.
 
 Download `HumanTyper.exe` from the [latest release](https://github.com/jiongjiong123441/HumanTyper/releases/latest) (Windows 10/11, no install). Default hotkeys: `F8` start / pause / resume, `F9` stop, `F10` restart. Licensed under [MIT](LICENSE).
