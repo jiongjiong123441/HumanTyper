@@ -230,8 +230,16 @@ namespace HumanTyper
             private static int _device = 1;
             public static string LastError { get; private set; } = "";
 
-            public static bool DllPresent =>
-                System.IO.File.Exists(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "interception.dll"));
+            [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            private static extern IntPtr LoadLibrary(string path);
+
+            private static string ExeDirDll =>
+                System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "interception.dll");
+
+            /// <summary>The dll is either next to the exe or where the one-click installer put it.</summary>
+            public static bool DllPresent => System.IO.File.Exists(ExeDirDll) || System.IO.File.Exists(DriverSetup.DllPath);
+
+            private static bool _loaded;
 
             /// <summary>True when the dll loads and at least one keyboard is attached through the driver.</summary>
             public static bool Open()
@@ -239,9 +247,25 @@ namespace HumanTyper
                 if (_ctx != IntPtr.Zero) return true;
                 try
                 {
-                    if (!DllPresent) { LastError = "未找到 interception.dll（请放在 HumanTyper.exe 同目录）"; return false; }
+                    if (!DllPresent)
+                    {
+                        LastError = DriverSetup.DriverInstalled ? "驱动已安装，但缺少 interception.dll，请点“一键安装驱动”修复"
+                                                                : "尚未安装键盘驱动，点“一键安装驱动”即可";
+                        return false;
+                    }
+                    if (!_loaded)
+                    {
+                        // Load it by full path so the DllImports below bind to it.
+                        string path = System.IO.File.Exists(ExeDirDll) ? ExeDirDll : DriverSetup.DllPath;
+                        if (LoadLibrary(path) == IntPtr.Zero) { LastError = "无法加载 interception.dll"; return false; }
+                        _loaded = true;
+                    }
                     _ctx = interception_create_context();
-                    if (_ctx == IntPtr.Zero) { LastError = "Interception 驱动未安装或未生效（安装后需重启电脑）"; return false; }
+                    if (_ctx == IntPtr.Zero)
+                    {
+                        LastError = DriverSetup.DriverInstalled ? "驱动已安装，重启电脑后生效" : "尚未安装键盘驱动，点“一键安装驱动”即可";
+                        return false;
+                    }
                     // pick the first keyboard device that the driver actually sees
                     IntPtr buf = Marshal.AllocHGlobal(512);
                     try
