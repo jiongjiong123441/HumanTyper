@@ -114,9 +114,14 @@ namespace HumanTyper
             if (target == IntPtr.Zero) return;
             if (isMouse)
             {
-                if (mouseRootWindow != target) return;   // clicks elsewhere are caught by the focus check
+                // clicks in other programs are caught by the foreground check
+                if (mouseRootWindow != target && !SameProcess(mouseRootWindow, target)) return;
             }
-            else if (GetForegroundWindow() != target) return;
+            else
+            {
+                IntPtr fg = GetForegroundWindow();
+                if (fg != target && !SameProcess(fg, target)) return;
+            }
 
             Interlocked.Exchange(ref _lastUserInputMs, Now);
             _interfered = true;
@@ -656,6 +661,61 @@ namespace HumanTyper
         private bool _mouseKnown;
 
         /// <summary>
+        /// True if both windows belong to the same program — same process, or another process of
+        /// the same executable. Remote-control viewers (ToDesk, Sunlogin…) juggle several windows,
+        /// sometimes across processes, while the user just sees "the remote screen".
+        /// </summary>
+        private static bool SameProcess(IntPtr a, IntPtr b)
+        {
+            if (a == IntPtr.Zero || b == IntPtr.Zero) return false;
+            GetWindowThreadProcessId(a, out uint pa);
+            GetWindowThreadProcessId(b, out uint pb);
+            if (pa == 0 || pb == 0) return false;
+            if (pa == pb) return true;
+            string na = ProcessName(pa), nb = ProcessName(pb);
+            return na != null && string.Equals(na, nb, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static readonly Dictionary<uint, string> NameCache = new Dictionary<uint, string>();
+
+        private static string ProcessName(uint pid)
+        {
+            lock (NameCache)
+            {
+                if (NameCache.TryGetValue(pid, out string n)) return n;
+                try { using (var p = System.Diagnostics.Process.GetProcessById((int)pid)) n = p.ProcessName; }
+                catch { n = null; }
+                if (NameCache.Count > 200) NameCache.Clear();
+                NameCache[pid] = n;
+                return n;
+            }
+        }
+
+        private IntPtr _describedHwnd;
+        private string _described;
+
+        /// <summary>"process.exe「title」" for status messages (cached per window).</summary>
+        private string Describe(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return "无";
+            if (hwnd == _describedHwnd && _described != null) return _described;
+            string name = "?";
+            try
+            {
+                GetWindowThreadProcessId(hwnd, out uint pid);
+                using (var p = System.Diagnostics.Process.GetProcessById((int)pid)) name = p.ProcessName + ".exe";
+            }
+            catch { }
+            var sb = new StringBuilder(256);
+            GetWindowText(hwnd, sb, 256);
+            string title = sb.ToString();
+            if (title.Length > 30) title = title.Substring(0, 30) + "…";
+            _describedHwnd = hwnd;
+            _described = IsOwnWindow(hwnd) ? "HumanTyper 本身" : (title.Length > 0 ? $"{name}「{title}」" : name);
+            return _described;
+        }
+
+        /// <summary>
         /// The pointer moving means someone is using the mouse — local, or a remote operator through
         /// ToDesk/Sunlogin. HumanTyper never moves it, so any movement counts as the user.
         /// </summary>
@@ -676,11 +736,30 @@ namespace HumanTyper
             if (!_manualPause) PollMouse();
             IntPtr fg = GetForegroundWindow();
             if (fg != _target)
-                return "目标窗口不在前台 — 切回原输入位置后自动继续（或按 " + Settings.KeyName(_s.StartPauseKey) + " 在当前位置继续）";
+            {
+                // Same program, different window (an app swapping its own windows, ToDesk's viewer
+                // re-creating its window…): if nobody touched anything, keep typing there.
+                if (!_interfered && fg != IntPtr.Zero && SameProcess(fg, _target))
+                {
+                    var s2 = CaretProbe.Read(fg);
+                    _target = fg; _targetFocus = s2.Focus; _baseline = s2; _unsampled = 0; _caretTracks = false;
+                }
+                else
+                    return "目标窗口不在前台（当前前台：" + Describe(fg) + "）— 切回原输入位置后自动继续，或按 " +
+                           Settings.KeyName(_s.StartPauseKey) + " 在当前位置继续";
+            }
 
             var snap = CaretProbe.Read(fg);
             if (_targetFocus != IntPtr.Zero && snap.Focus != IntPtr.Zero && snap.Focus != _targetFocus)
-                return "输入焦点离开了原输入框 — 点回原处后自动继续";
+            {
+                if (!_interfered)
+                {
+                    // the program moved focus by itself (no click / key from the user): follow it
+                    _targetFocus = snap.Focus; _baseline = snap; _unsampled = 0; _caretTracks = false;
+                }
+                else
+                    return "输入焦点离开了原输入框 — 点回原处后自动继续，或按 " + Settings.KeyName(_s.StartPauseKey) + " 在当前位置继续";
+            }
 
             if (_interfered)
             {
