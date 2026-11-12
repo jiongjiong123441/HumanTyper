@@ -1,0 +1,164 @@
+name: 🐞 问题反馈 / Bug report
+description: HumanTyper 打字异常、崩溃或功能不正常
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！提交前请先看一下 README 的 [常见问题](https://github.com/jiongjiong123441/HumanTyper#常见问题)，
+        例如「完全打不出字」（目标程序以管理员身份运行）、「代码编辑器多出缩进/括号」、「提示不支持读取文本，已跳过核对」等。
+
+  - type: input
+    id: version
+    attributes:
+      label: HumanTyper 版本
+      description: 下载的 Release 版本号，如 v1.1.3；自己编译的请写 commit
+      placeholder: v1.1.3
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Windows 版本
+      options:
+        - Windows 11
+        - Windows 10
+        - 其他（请在描述中说明）
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题类型
+      multiple: true
+      options:
+        - 打不出字 / 漏字 / 乱码
+        - 中文输入（拼音、选词、输入法中英切换）
+        - 模拟错字后没有正确退格修正
+        - 自动暂停 / 自动继续不正常
+        - 打完核对（读回文本、修正时改错了位置）
+        - 快捷键（F8 / F9 / F10 或自定义快捷键）
+        - 速度、节奏、思考停顿与设置不符
+        - 程序崩溃 / 无响应
+        - 界面 / 设置保存
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: target-app
+    attributes:
+      label: 目标程序
+      description: 往哪里打字时出的问题？网页请写浏览器和网站
+      placeholder: 例如：记事本 / Word / Chrome 里的某网站 / VS Code / 微信 / ToDesk 远控窗口
+    validations:
+      required: true
+
+  - type: dropdown
+    id: input-mode
+    attributes:
+      label: 输入方式
+      description: 主界面「输入方式」下拉框里选的是哪一项
+      options:
+        - 标准（本机程序，中文直接上屏）
+        - 键盘扫描码（远程桌面 / 远控软件 / 虚拟机）
+        - 驱动级虚拟键盘（Interception 驱动）
+    validations:
+      required: true
+
+  - type: textarea
+    id: remote-ime
+    attributes:
+      label: 键盘扫描码 / 驱动级模式补充（标准模式可跳过）
+      description: 这两种模式下中文是以拼音敲给目标电脑的输入法的，这些信息很关键
+      placeholder: |
+        - 远控软件 / 虚拟机：例如 ToDesk、向日葵、Windows 远程桌面、VMware
+        - 目标电脑的输入法：例如 微软拼音 / 搜狗 / 微信输入法
+        - 开始时输入法处于中文还是英文模式：
+        - 中英切换键设置：Shift / Ctrl+Space
+        - 驱动级：Interception 是否已安装并重启过
+
+  - type: dropdown
+    id: admin
+    attributes:
+      label: 权限
+      options:
+        - 都是普通权限运行
+        - HumanTyper 以管理员身份运行
+        - 目标程序以管理员身份运行，HumanTyper 不是
+        - 不确定
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 实际发生了什么？你期望的结果是什么？
+      placeholder: |
+        实际：打到第二段时中文变成了拼音字母 "nihao"
+        期望：正常输出中文「你好」
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 在主界面粘贴下面「测试文本」
+        2. 光标放到记事本里，按 F8 开始
+        3. 打到 xx 时切换了一下窗口，再切回来
+        4. 没有自动继续 / 继续后位置错了
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 出现频率
+      options:
+        - 每次都出现
+        - 经常出现
+        - 偶尔出现
+        - 只出现过一次
+    validations:
+      required: true
+
+  - type: input
+    id: status-text
+    attributes:
+      label: 状态栏提示文字
+      description: 出问题时主界面底部状态栏显示的内容（原样复制）
+      placeholder: 例如：目标程序不支持读取文本，已跳过核对
+
+  - type: textarea
+    id: sample-text
+    attributes:
+      label: 测试文本
+      description: 能复现问题的最短文本。注意中英混排、emoji、特殊符号、换行、缩进等。请勿贴含隐私的内容
+      render: text
+
+  - type: textarea
+    id: settings
+    attributes:
+      label: 设置文件（可选）
+      description: 打开 `%APPDATA%\HumanTyper\settings.ini`，把内容贴到这里，方便复现速度、错字、停顿、换行方式等设置
+      render: ini
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图 / 录屏 / 崩溃信息（可选）
+      description: 可以直接拖拽图片或视频上传；崩溃时如有弹窗报错请完整复制
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认
+      options:
+        - label: 我已搜索过现有 issue，没有重复
+          required: true
+        - label: 我已在最新版本上确认过问题仍然存在
+        - label: 我已看过 README 中的常见问题
