@@ -69,7 +69,7 @@ namespace HumanTyper
             _u = Split(text);
             _target = target;
             _stop = false; _manualPause = false; _rebaseline = false; _autoPaused = false; _interfered = false;
-            _unsampled = 0; _catchUp = 0; _caretTracks = false; _mouseKnown = false;
+            _unsampled = 0; _catchUp = 0; _caretTracks = false;
             _flow = 1.0; _pendingSentence = false; _noTypoAt = -1;
             _wordsLeft = _rnd.Next(_s.WordEveryMin, Math.Max(_s.WordEveryMin, _s.WordEveryMax) + 1);
             _sentencesLeft = _rnd.Next(_s.SentEveryMin, Math.Max(_s.SentEveryMin, _s.SentEveryMax) + 1);
@@ -657,8 +657,6 @@ namespace HumanTyper
             Report(st, msg);
         }
 
-        private POINT _mousePos;
-        private bool _mouseKnown;
 
         /// <summary>
         /// True if both windows belong to the same program — same process, or another process of
@@ -715,25 +713,8 @@ namespace HumanTyper
             return _described;
         }
 
-        /// <summary>
-        /// The pointer moving means someone is using the mouse — local, or a remote operator through
-        /// ToDesk/Sunlogin. HumanTyper never moves it, so any movement counts as the user.
-        /// </summary>
-        private void PollMouse()
-        {
-            if (!_s.PauseOnMouseMove || !GetCursorPos(out POINT p)) return;
-            if (_mouseKnown && (Math.Abs(p.X - _mousePos.X) > 3 || Math.Abs(p.Y - _mousePos.Y) > 3))
-            {
-                Interlocked.Exchange(ref _lastUserInputMs, Now);
-                _interfered = true;
-            }
-            _mousePos = p;
-            _mouseKnown = true;
-        }
-
         private string CheckTarget()
         {
-            if (!_manualPause) PollMouse();
             IntPtr fg = GetForegroundWindow();
             if (fg != _target)
             {
