@@ -751,22 +751,10 @@ namespace HumanTyper
                 if (!_baseline.CaretOk || !snap.CaretOk || !_caretTracks)
                 {
                     // Can't check where the caret is (remote window, or an app that hides it):
-                    // once the user has left everything alone for a few seconds, carry on there.
-                    int idleMs = Math.Max(0, _s.IdleResumeSec) * 1000;
-                    long quiet = Now - Interlocked.Read(ref _lastUserInputMs);
-                    if (idleMs > 0 && quiet >= idleMs)
-                    {
-                        _interfered = false;
-                        _targetFocus = snap.Focus != IntPtr.Zero ? snap.Focus : _targetFocus;
-                        _baseline = snap;
-                        _unsampled = 0;
-                        return null;
-                    }
+                    // wait for the user to say so with the hotkey.
                     string key = Settings.KeyName(_s.StartPauseKey);
-                    string how = idleMs > 0
-                        ? $"把光标放回原处后停手 {_s.IdleResumeSec} 秒自动继续（还剩 {Math.Max(1, (idleMs - quiet + 999) / 1000)} 秒），或按 {key} 立即继续"
-                        : $"把光标放回原处后按 {key} 继续";
-                    return (_kb != null && _kb.IsKeyMode ? "检测到手动操作，已暂停 — 远程窗口读不到光标位置，" : "检测到手动操作，已暂停 — 读不到光标位置，") + how;
+                    return (_kb != null && _kb.IsKeyMode ? "检测到手动操作，已暂停 — 远程窗口读不到光标位置，" : "检测到手动操作，已暂停 — 读不到光标位置，") +
+                           $"把光标放回原处后按 {key} 继续";
                 }
                 if (!snap.Near(_baseline))
                 {

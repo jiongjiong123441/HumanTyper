@@ -34,7 +34,7 @@ namespace HumanTyper
 
         // control
         private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof;
-        private NumericUpDown _numCountdown, _numIdle;
+        private NumericUpDown _numCountdown;
         private ComboBox _cboNewline, _cboMode, _cboImeState, _cboImeToggle;
         private LinkLabel _lnkDriver;
         private Control _rowIme;
@@ -185,10 +185,6 @@ namespace HumanTyper
             _chkProof = new CheckBox { Text = "打完后从头核对一遍，有错就用键盘移动光标修改", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
             tCtl.Controls.Add(Row(_chkAutoPause, _chkProof));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
-            _numIdle = Num(0, 60, 0, 1);
-            tCtl.Controls.Add(Row(Lbl("读不到光标位置时（如远程窗口），停止操作"), _numIdle,
-                Lbl("秒后自动继续（0 = 只能按快捷键继续）", true)));
-            tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
 
             // keyboard / remote mode
             _cboMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 300, Margin = new Padding(3, 4, 3, 3) };
@@ -313,7 +309,7 @@ namespace HumanTyper
             UpdateModeUi();
             _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
             SetNum(_numCountdown, s.Countdown);
-            SetNum(_numIdle, s.IdleResumeSec);            _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
+            _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
             _hkStart.Hotkey = s.StartPauseKey; _hkStop.Hotkey = s.StopKey; _hkRestart.Hotkey = s.RestartKey;
 
             foreach (var n in new[] { _numWpm, _numCpm, _numVar, _numTypo, _numWEMin, _numWEMax, _numWPMin, _numWPMax,
@@ -340,7 +336,7 @@ namespace HumanTyper
             s.ImeToggleKey = _cboImeToggle.SelectedIndex == 1 ? 1 : 0;
             s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
             s.Countdown = (int)_numCountdown.Value;
-            s.IdleResumeSec = (int)_numIdle.Value;            s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
+            s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;
         }
 

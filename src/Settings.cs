@@ -30,7 +30,6 @@ namespace HumanTyper
         // 控制
         public bool AutoPause = true;
         public bool Proofread = true;   // 打完后整体核对并用键盘修正
-        public int IdleResumeSec = 3;   // 读不到光标位置时：停止操作这么多秒后自动继续（0 = 只能按快捷键）
         public int InputMode = 0;       // 0 = 标准(Unicode), 1 = 键盘扫描码, 2 = 驱动级(Interception)
         public bool RemoteImeChinese = true;  // 键盘模式下：目标输入法开始时处于中文模式
         public int ImeToggleKey = 0;    // 0 = Shift, 1 = Ctrl+Space
