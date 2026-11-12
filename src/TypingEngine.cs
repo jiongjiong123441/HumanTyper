@@ -45,6 +45,7 @@ namespace HumanTyper
         private CaretProbe.Snapshot _baseline;
         private int _unsampled;      // net characters typed since _baseline was sampled (backspace = -1)
         private int _catchUp;        // Right-arrow presses needed after resuming at _baseline
+        private bool _caretTracks;   // we've seen the caret move as we typed (so its position is meaningful)
 
         private double _flow = 1.0;
         private int _wordsLeft, _sentencesLeft;
@@ -68,7 +69,7 @@ namespace HumanTyper
             _u = Split(text);
             _target = target;
             _stop = false; _manualPause = false; _rebaseline = false; _autoPaused = false; _interfered = false;
-            _unsampled = 0; _catchUp = 0;
+            _unsampled = 0; _catchUp = 0; _caretTracks = false;
             _flow = 1.0; _pendingSentence = false; _noTypoAt = -1;
             _wordsLeft = _rnd.Next(_s.WordEveryMin, Math.Max(_s.WordEveryMin, _s.WordEveryMax) + 1);
             _sentencesLeft = _rnd.Next(_s.SentEveryMin, Math.Max(_s.SentEveryMin, _s.SentEveryMax) + 1);
@@ -665,8 +666,28 @@ namespace HumanTyper
             {
                 if (Now - Interlocked.Read(ref _lastUserInputMs) < 450)
                     return "检测到手动操作，已暂停…";
-                if (!_baseline.CaretOk || !snap.CaretOk)
-                    return "检测到手动操作（此程序无法读取光标位置）— 确认光标在原处后按 " + Settings.KeyName(_s.StartPauseKey) + " 继续";
+                // A caret we never saw move while typing isn't the real one (e.g. the local shell
+                // of a remote-control window), so it can't tell us whether the user came back.
+                if (!_baseline.CaretOk || !snap.CaretOk || !_caretTracks)
+                {
+                    // Can't check where the caret is (remote window, or an app that hides it):
+                    // once the user has left everything alone for a few seconds, carry on there.
+                    int idleMs = Math.Max(0, _s.IdleResumeSec) * 1000;
+                    long quiet = Now - Interlocked.Read(ref _lastUserInputMs);
+                    if (idleMs > 0 && quiet >= idleMs)
+                    {
+                        _interfered = false;
+                        _targetFocus = snap.Focus != IntPtr.Zero ? snap.Focus : _targetFocus;
+                        _baseline = snap;
+                        _unsampled = 0;
+                        return null;
+                    }
+                    string key = Settings.KeyName(_s.StartPauseKey);
+                    string how = idleMs > 0
+                        ? $"把光标放回原处后停手 {_s.IdleResumeSec} 秒自动继续（还剩 {Math.Max(1, (idleMs - quiet + 999) / 1000)} 秒），或按 {key} 立即继续"
+                        : $"把光标放回原处后按 {key} 继续";
+                    return (_kb != null && _kb.IsKeyMode ? "检测到手动操作，已暂停 — 远程窗口读不到光标位置，" : "检测到手动操作，已暂停 — 读不到光标位置，") + how;
+                }
                 if (!snap.Near(_baseline))
                 {
                     // The last few keystrokes may not have been sampled yet: accept the caret if it
@@ -817,6 +838,7 @@ namespace HumanTyper
                 {
                     if (snap.Focus == _targetFocus || snap.Focus == IntPtr.Zero)
                     {
+                        _caretTracks = true;      // the caret follows our typing: it's the real one
                         _baseline = snap;
                         _unsampled = 0;
                         _lastSampleMs = Now;

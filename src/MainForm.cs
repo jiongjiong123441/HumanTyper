@@ -34,7 +34,7 @@ namespace HumanTyper
 
         // control
         private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof;
-        private NumericUpDown _numCountdown;
+        private NumericUpDown _numCountdown, _numIdle;
         private ComboBox _cboNewline, _cboMode, _cboImeState, _cboImeToggle;
         private LinkLabel _lnkDriver;
         private Control _rowIme;
@@ -65,6 +65,7 @@ namespace HumanTyper
             _engine.StateChanged += (run, st, msg) => BeginInvokeSafe(() => { if (run == _engine.RunId) OnEngineState(st, msg); });
             _engine.ProgressChanged += (run, done, total) => BeginInvokeSafe(() => { if (run == _engine.RunId) OnProgress(done, total); });
             _monitor.UserInput += OnUserInput;
+            _monitor.KeyDown += OnRawKeyDown;
             _countdownTimer.Tick += CountdownTick;
         }
 
@@ -183,6 +184,10 @@ namespace HumanTyper
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
             _chkProof = new CheckBox { Text = "打完后从头核对一遍，有错就用键盘移动光标修改", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
             tCtl.Controls.Add(Row(_chkAutoPause, _chkProof));
+            tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
+            _numIdle = Num(0, 60, 0, 1);
+            tCtl.Controls.Add(Row(Lbl("读不到光标位置时（如远程窗口、被远程控制时），停止操作"), _numIdle,
+                Lbl("秒后自动继续（0 = 只能按快捷键继续）", true)));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
 
             // keyboard / remote mode
@@ -308,6 +313,7 @@ namespace HumanTyper
             UpdateModeUi();
             _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
             SetNum(_numCountdown, s.Countdown);
+            SetNum(_numIdle, s.IdleResumeSec);
             _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
             _hkStart.Hotkey = s.StartPauseKey; _hkStop.Hotkey = s.StopKey; _hkRestart.Hotkey = s.RestartKey;
 
@@ -335,6 +341,7 @@ namespace HumanTyper
             s.ImeToggleKey = _cboImeToggle.SelectedIndex == 1 ? 1 : 0;
             s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
             s.Countdown = (int)_numCountdown.Value;
+            s.IdleResumeSec = (int)_numIdle.Value;
             s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;
         }
@@ -643,22 +650,49 @@ namespace HumanTyper
         {
             if (m.Msg == WM_HOTKEY)
             {
-                switch (m.WParam.ToInt32())
-                {
-                    case HK_STARTPAUSE:
-                        if (_engine.IsBusy) _engine.TogglePause();
-                        else if (!_counting) StartFromHotkey();
-                        break;
-                    case HK_STOP:
-                        StopAll();
-                        break;
-                    case HK_RESTART:
-                        Restart(fromHotkey: true);
-                        break;
-                }
+                ExecuteHotkey(m.WParam.ToInt32());
                 return;
             }
             base.WndProc(ref m);
+        }
+
+        private readonly long[] _lastHotkeyAt = new long[4];
+        private readonly System.Diagnostics.Stopwatch _hotkeyClock = System.Diagnostics.Stopwatch.StartNew();
+
+        /// <summary>
+        /// Runs a hotkey action. Both RegisterHotKey and raw input may report the same press
+        /// (raw input is what still works inside ToDesk/Sunlogin windows), so presses within
+        /// 400 ms of each other count once.
+        /// </summary>
+        private void ExecuteHotkey(int id)
+        {
+            if (id < 1 || id > 3) return;
+            if (_hkStart.Focused || _hkStop.Focused || _hkRestart.Focused) return;   // user is setting a hotkey
+            long now = _hotkeyClock.ElapsedMilliseconds;
+            if (now - _lastHotkeyAt[id] < 400) return;
+            _lastHotkeyAt[id] = now;
+            switch (id)
+            {
+                case HK_STARTPAUSE:
+                    if (_engine.IsBusy) _engine.TogglePause();
+                    else if (!_counting) StartFromHotkey();
+                    break;
+                case HK_STOP:
+                    StopAll();
+                    break;
+                case HK_RESTART:
+                    Restart(fromHotkey: true);
+                    break;
+            }
+        }
+
+        /// <summary>Raw-input key press (hook thread): recognise our hotkeys even if another app ate them.</summary>
+        private void OnRawKeyDown(Keys k)
+        {
+            int id = k == _settings.StartPauseKey ? HK_STARTPAUSE
+                   : k == _settings.StopKey ? HK_STOP
+                   : k == _settings.RestartKey ? HK_RESTART : 0;
+            if (id != 0 && (k & Keys.KeyCode) != Keys.None) BeginInvokeSafe(() => ExecuteHotkey(id));
         }
 
         // ================================================================== lifecycle

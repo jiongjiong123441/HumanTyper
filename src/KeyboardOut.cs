@@ -26,9 +26,14 @@ namespace HumanTyper
         private readonly Random _rnd = new Random();
         public InputMode Mode { get; }
 
-        /// <summary>Tick count until which keyboard events seen by our hook are our own (driver mode).</summary>
+        /// <summary>
+        /// Tick count until which keyboard events seen by our hooks are taken to be our own echo.
+        /// Driver-level keys carry no marker at all, and raw input may not pass the marker on, so
+        /// every send opens a short window in which keyboard events aren't blamed on the user.
+        /// </summary>
         private static long _selfUntil;
         public static bool IsSelfEcho => Environment.TickCount - Interlocked.Read(ref _selfUntil) < 0;
+        private static void MarkSelf() => Interlocked.Exchange(ref _selfUntil, Environment.TickCount + 120);
 
         public KeyboardOut(InputMode mode)
         {
@@ -116,9 +121,9 @@ namespace HumanTyper
 
         private void Key(ushort sc, bool extended, bool up, ushort vkForUnicodeMode)
         {
+            MarkSelf();
             if (Mode == InputMode.Driver)
             {
-                Interlocked.Exchange(ref _selfUntil, Environment.TickCount + 150);
                 Interception.Send(sc, extended, up);
                 return;
             }
@@ -135,6 +140,7 @@ namespace HumanTyper
 
         private void UnicodeChar(string unit)
         {
+            MarkSelf();
             var downs = new List<INPUT>();
             var ups = new List<INPUT>();
             foreach (char c in unit)
@@ -156,6 +162,7 @@ namespace HumanTyper
 
         private static void SendVk(ushort vk, bool up)
         {
+            MarkSelf();
             var inp = new INPUT { type = INPUT_KEYBOARD };
             bool ext = (vk >= 0x21 && vk <= 0x28) || vk == 0x2D || vk == 0x2E;
             inp.U.ki = new KEYBDINPUT
