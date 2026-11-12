@@ -26,6 +26,8 @@ namespace HumanTyper
             /// <summary>Last wanted word (index) with a difference we did not act on, -1 if none.
             /// Fixes are positioned by counting back from the caret, so a fix is only safe after it.</summary>
             public int LastUnsure = -1;
+            /// <summary>First wanted word that was actually checked (everything before it is off screen).</summary>
+            public int FirstWord;
         }
 
         private const string Wild = "~";
@@ -71,8 +73,10 @@ namespace HumanTyper
         /// Locates the end of our text among the OCR'd words and lists the words that differ.
         /// Returns null if our text can't be found on screen.
         /// </summary>
-        public static Result Compare(List<string> ocrWords, List<string> wantWords)
+        /// <param name="wantEnd">Only compare wanted words before this index (for pages above the first one).</param>
+        public static Result Compare(List<string> ocrWords, List<string> wantWords, int wantEnd = -1)
         {
+            if (wantEnd >= 0 && wantEnd < wantWords.Count) wantWords = wantWords.GetRange(0, wantEnd);   // indexes stay the same
             if (ocrWords == null || wantWords.Count == 0) return null;
             var a = ocrWords.ConvertAll(Key);
             var b = wantWords.ConvertAll(Key);
@@ -103,7 +107,8 @@ namespace HumanTyper
             var hunks = TypingEngine.DiffHunks(aw, bw, 6 + L / 4);
             if (hunks == null) return null;
 
-            var res = new Result();
+            var res = new Result { FirstWord = off };
+            if (hunks.Count > 0 && hunks[0].AStart == 0) res.FirstWord = off + hunks[0].BStart + hunks[0].Insert.Count;
             foreach (var h in hunks)
             {
                 int na = h.AEnd - h.AStart, nb = h.Insert.Count;
@@ -146,18 +151,44 @@ namespace HumanTyper
         /// Combines two readings: a fix is kept only if both saw the very same wrong word and
         /// nothing unsure lies between it and the caret (that could shift its position).
         /// </summary>
-        public static List<Fix> Agree(Result r1, Result r2, out int uncertain)
+        public static List<Fix> Agree(Result r1, Result r2, out int uncertain) =>
+            Agree(new[] { new[] { r1, r2 } }, out uncertain);
+
+        /// <summary>The same over several screenfuls (pages scrolled through), each read twice.</summary>
+        public static List<Fix> Agree(IEnumerable<Result[]> pages, out int uncertain)
         {
-            uncertain = Math.Max(r1?.Uncertain ?? 0, r2?.Uncertain ?? 0);
-            var fixes = new List<Fix>();
-            if (r1 == null || r2 == null) return fixes;
-            int lastUnsure = Math.Max(r1.LastUnsure, r2.LastUnsure);
-            foreach (var f in r1.Fixes) if (!r2.Fixes.Contains(f)) lastUnsure = Math.Max(lastUnsure, f.WordEnd - 1);
-            foreach (var f in r2.Fixes) if (!r1.Fixes.Contains(f)) lastUnsure = Math.Max(lastUnsure, f.WordEnd - 1);
-            foreach (var f in r1.Fixes)
+            uncertain = 0;
+            int lastUnsure = -1;
+            var agreed = new List<Fix>();
+            foreach (var p in pages)
             {
-                if (r2.Fixes.Contains(f) && f.WordStart > lastUnsure) fixes.Add(f);
-                else uncertain++;
+                Result r1 = p[0], r2 = p[1];
+                uncertain += Math.Max(r1?.Uncertain ?? 0, r2?.Uncertain ?? 0);
+                lastUnsure = Math.Max(lastUnsure, Math.Max(r1?.LastUnsure ?? -1, r2?.LastUnsure ?? -1));
+                if (r1 == null || r2 == null)
+                {
+                    // only one reading found our text: nothing it saw can be confirmed
+                    foreach (var f in (r1 ?? r2)?.Fixes ?? new List<Fix>()) { lastUnsure = Math.Max(lastUnsure, f.WordEnd - 1); uncertain++; }
+                    continue;
+                }
+                foreach (var f in r1.Fixes)
+                    if (!r2.Fixes.Contains(f)) { lastUnsure = Math.Max(lastUnsure, f.WordEnd - 1); uncertain++; }
+                    else if (!agreed.Contains(f)) agreed.Add(f);
+                foreach (var f in r2.Fixes)
+                    if (!r1.Fixes.Contains(f)) { lastUnsure = Math.Max(lastUnsure, f.WordEnd - 1); uncertain++; }
+            }
+            // Two pages that disagree about the same words: unsure too.
+            for (int i = 0; i < agreed.Count; i++)
+                for (int j = i + 1; j < agreed.Count; j++)
+                    if (agreed[i].WordStart < agreed[j].WordEnd && agreed[j].WordStart < agreed[i].WordEnd)
+                        lastUnsure = Math.Max(lastUnsure, Math.Max(agreed[i].WordEnd, agreed[j].WordEnd) - 1);
+            var fixes = new List<Fix>();
+            foreach (var f in agreed)
+            {
+                // A fix is placed by counting back from the caret: only safe if nothing unsure
+                // lies between it and the caret.
+                if (f.WordStart <= lastUnsure) { uncertain++; continue; }
+                fixes.Add(f);
             }
             return fixes;
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Automation;
 using System.Windows.Automation.Text;
 using static HumanTyper.NativeMethods;
@@ -261,14 +262,12 @@ namespace HumanTyper
             var spans = OcrMatch.WordSpans(want);
             foreach (var (s, e) in spans) wantWords.Add(string.Concat(want.GetRange(s, e - s)));
 
-            var r1 = OcrMatch.Compare(ScreenOcr.ReadWords(area, 2.0, covered, fg), wantWords);
-            if (_stop) throw new OperationCanceledException();
-            var r2 = OcrMatch.Compare(ScreenOcr.ReadWords(area, 3.0, covered, fg), wantWords);
-            if (r1 == null && r2 == null) return false;
+            var pages = ReadPagesByOcr(fg, area, covered, wantWords);
+            if (pages == null) return false;
 
             // A fix is made only if both readings saw the very same wrong word and nothing
             // unsure lies between it and the caret.
-            var fixes = OcrMatch.Agree(r1, r2, out uncertain);
+            var fixes = OcrMatch.Agree(pages, out uncertain);
 
             // What we believe is on screen: the wanted text with those words as seen.
             w = new List<string>(want);
@@ -285,6 +284,119 @@ namespace HumanTyper
             hunks = fixes.Count == 0 ? new List<Hunk>() : DiffHunks(w, want, changed * 2 + 10, true);
             if (hunks == null) { hunks = new List<Hunk>(); uncertain += fixes.Count; }
             return true;
+        }
+
+        private const int MaxOcrPages = 15;
+
+        /// <summary>
+        /// Reads our text off the screen, page by page. The first page is what's visible now (it
+        /// ends at the caret); if our text starts further up, the mouse wheel scrolls up a bit
+        /// more than half a screen at a time, and every page is matched against the part of the
+        /// text just before the page below it. While one page is being recognised the next one is
+        /// already scrolled to and captured. Afterwards the view and the mouse are put back.
+        /// Returns null if our text isn't found on the first page.
+        /// </summary>
+        private List<OcrMatch.Result[]> ReadPagesByOcr(IntPtr fg, System.Drawing.Rectangle area, bool covered, List<string> wantWords)
+        {
+            var pages = new List<OcrMatch.Result[]>();
+            ScreenOcr.Reading[] read0;
+            System.Drawing.Bitmap prev = ScreenOcr.Capture(area, covered, fg);
+            if (prev == null) return null;
+            read0 = ScreenOcr.ReadAll(prev);
+            var p0 = new[] { OcrMatch.Compare(read0[0]?.Words, wantWords), OcrMatch.Compare(read0[1]?.Words, wantWords) };
+            if (p0[0] == null && p0[1] == null) { prev.Dispose(); return null; }
+            pages.Add(p0);
+
+            int FirstOf(OcrMatch.Result[] p) => Math.Max(p[0]?.FirstWord ?? 0, p[1]?.FirstWord ?? 0);
+            int firstWord = FirstOf(p0);
+            if (firstWord <= 0) { prev.Dispose(); return pages; }   // all of it was on screen
+
+            // ---- more text above: scroll up page by page
+            Report(EngineState.Thinking, "截图识别：内容较长，向上滚动继续核对…");
+            bool remote = _kb.IsKeyMode;
+            double lineH = Math.Max(read0[0]?.LineHeight ?? 0, read0[1]?.LineHeight ?? 0);
+            if (lineH < 8) lineH = _baseline.CaretOk && _baseline.H > 8 ? _baseline.H : 20;
+            uint wheelLines = 3;
+            if (SystemParametersInfo(SPI_GETWHEELSCROLLLINES, 0, out uint wl, 0) && wl > 0 && wl < 100) wheelLines = wl;
+            int notches = Math.Max(1, (int)(area.Height * 0.55 / (lineH * wheelLines)));
+            int visible = Math.Max(1, wantWords.Count - firstWord);
+            int pagesWanted = Math.Min(MaxOcrPages, 1 + (int)Math.Ceiling(firstWord / Math.Max(1.0, visible * 0.5)));
+
+            GetCursorPos(out POINT mouse0);
+            var c = _baseline;
+            int mx = area.Left + area.Width / 2, my = area.Top + area.Height / 2;
+            if (_caretTracks && c.CaretOk && area.Contains(c.X, c.Y - (int)lineH))
+            { mx = c.X; my = c.Y - (int)lineH; }   // over the text box itself (chat apps: the box scrolls, not the window)
+            int scrolled = 0;
+
+            // Recognition runs in the background, one page after another, in page order; each page
+            // is compared against the text just before the first word the page below it showed.
+            object gate = new object();
+            int nextEnd = Math.Min(wantWords.Count, firstWord + 4);   // a few words of overlap
+            bool chainDone = false;
+            Task chain = Task.CompletedTask;
+            try
+            {
+                SetCursorPos(mx, my);
+                for (int page = 1; page < pagesWanted; page++)
+                {
+                    lock (gate) if (chainDone) break;
+                    Wheel(notches);
+                    scrolled += notches;
+                    SleepPlain(remote ? 500 : 220);              // let it repaint (remote: let the frame arrive)
+                    var shot = ScreenOcr.Capture(area, covered, fg);
+                    if (shot != null && ScreenOcr.Same(shot, prev))
+                    {
+                        SleepPlain(remote ? 600 : 200);          // maybe just slow to repaint
+                        shot.Dispose();
+                        shot = ScreenOcr.Capture(area, covered, fg);
+                        if (shot == null || ScreenOcr.Same(shot, prev)) { shot?.Dispose(); break; }   // reached the top
+                    }
+                    if (shot == null) break;
+
+                    // Keep at most one page waiting: let the previous page finish first.
+                    WaitTask(chain);
+                    prev.Dispose();
+                    prev = shot;
+                    var img = (System.Drawing.Bitmap)shot.Clone();
+                    chain = chain.ContinueWith(_ =>
+                    {
+                        try
+                        {
+                            int end;
+                            lock (gate) { if (chainDone) return; end = nextEnd; }
+                            var rd = ScreenOcr.ReadAll(img);
+                            var p = new[] { OcrMatch.Compare(rd[0]?.Words, wantWords, end), OcrMatch.Compare(rd[1]?.Words, wantWords, end) };
+                            lock (gate)
+                            {
+                                if (p[0] == null && p[1] == null) { chainDone = true; return; }   // lost track: stop here
+                                pages.Add(p);
+                                int fw = FirstOf(p);
+                                if (fw <= 0 || fw >= end) chainDone = true;                     // reached the start / no progress
+                                else nextEnd = Math.Min(end, fw + 4);
+                            }
+                        }
+                        finally { img.Dispose(); }
+                    }, TaskScheduler.Default);
+                }
+                WaitTask(chain);
+            }
+            finally
+            {
+                prev.Dispose();
+                // Put the view and the mouse back where they were.
+                for (int left = scrolled; left > 0; left -= 10) { Wheel(-Math.Min(10, left)); Thread.Sleep(30); }
+                SetCursorPos(mouse0.X, mouse0.Y);
+                if (scrolled > 0) Thread.Sleep(remote ? 400 : 150);
+            }
+            lock (gate) return new List<OcrMatch.Result[]>(pages);
+        }
+
+        /// <summary>Waits for background work while still honouring Stop.</summary>
+        private void WaitTask(Task t)
+        {
+            while (!t.Wait(50))
+                if (_stop) throw new OperationCanceledException();
         }
 
         /// <summary>
