@@ -113,6 +113,9 @@ namespace HumanTyper
         [DllImport("user32.dll")]
         public static extern bool GetCursorPos(out POINT pt);
 
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int max);
+
         [DllImport("user32.dll")]
         public static extern IntPtr GetForegroundWindow();
 
