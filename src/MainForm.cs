@@ -138,7 +138,9 @@ namespace HumanTyper
             var btnOpen = SmallButton("打开文件…", (s, e) => OpenFile());
             var btnClear = SmallButton("清空", (s, e) => { if (!_txt.ReadOnly) _txt.Clear(); });
             _lblStats = new Label { AutoSize = true, Margin = new Padding(12, 8, 0, 0), ForeColor = SystemColors.GrayText };
-            textBar.Controls.AddRange(new Control[] { btnPaste, btnOpen, btnClear, _lblStats });
+            var lnkFree = new LinkLabel { Text = "本软件永久免费 · 付费购买请退款举报 · 问题反馈", AutoSize = true, Margin = new Padding(16, 8, 0, 0), LinkColor = Color.FromArgb(198, 40, 40) };
+            lnkFree.LinkClicked += (s, e) => ShowFreeNotice(false);
+            textBar.Controls.AddRange(new Control[] { btnPaste, btnOpen, btnClear, _lblStats, lnkFree });
             textLayout.Controls.Add(textBar, 0, 1);
             gText.Controls.Add(textLayout);
             root.Controls.Add(gText, 0, 0);
@@ -933,6 +935,27 @@ namespace HumanTyper
             if (_lblStatus.Text.Length == 0)
                 SetStatus($"粘贴文本后点“开始”，在倒计时内点击目标输入位置；或先点到目标位置再按 {Settings.KeyName(_settings.StartPauseKey)} 立即开始。"
                           + $"  {Settings.KeyName(_settings.StartPauseKey)} 暂停/继续，{Settings.KeyName(_settings.StopKey)} 停止，{Settings.KeyName(_settings.RestartKey)} 重新开始。");
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            if (_settings.NoticeHiddenVersion != FreeNotice.VersionCode)
+                BeginInvokeSafe(() => ShowFreeNotice(true));
+        }
+
+        /// <summary>The "free forever — refund and report if you paid" notice.</summary>
+        private void ShowFreeNotice(bool startup)
+        {
+            using (var dlg = new FreeNotice(startup))
+            {
+                dlg.ShowDialog(this);
+                if (startup && dlg.HideForThisVersion)
+                {
+                    _settings.NoticeHiddenVersion = FreeNotice.VersionCode;
+                    _settings.Save();
+                }
+            }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
