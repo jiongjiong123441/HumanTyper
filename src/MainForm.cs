@@ -282,7 +282,7 @@ namespace HumanTyper
             var footer = new LinkLabel
             {
                 AutoSize = true,
-                Anchor = AnchorStyles.None,
+                Anchor = AnchorStyles.Left,
                 Margin = new Padding(0, 6, 0, 0),
                 ForeColor = SystemColors.GrayText,
                 LinkColor = SystemColors.GrayText,
@@ -972,7 +972,7 @@ namespace HumanTyper
             }
             if (_lblStatus.Text.Length == 0)
                 SetStatus($"粘贴文本后点“开始”，在倒计时内点击目标输入位置；或先点到目标位置再按 {Settings.KeyName(_settings.StartPauseKey)} 立即开始。"
-                          + $"  {Settings.KeyName(_settings.StartPauseKey)} 暂停/继续，{Settings.KeyName(_settings.StopKey)} 停止，{Settings.KeyName(_settings.RestartKey)} 重新开始。  " + FreeNotice.OneLine + "。");
+                          + $"  {Settings.KeyName(_settings.StartPauseKey)} 暂停/继续，{Settings.KeyName(_settings.StopKey)} 停止，{Settings.KeyName(_settings.RestartKey)} 重新开始。");
         }
 
         protected override void OnShown(EventArgs e)
