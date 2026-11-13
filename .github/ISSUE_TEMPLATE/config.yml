@@ -1,8 +1,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: 📖 常见问题 / FAQ
-    url: https://github.com/jiongjiong123441/HumanTyper#常见问题
+    url: https://github.com/ydnw6/HumanTyper#常见问题
     about: 打不出字、编辑器多出缩进、跳过核对、杀软误报等常见情况的解决办法
   - name: ⬇ 下载最新版
-    url: https://github.com/jiongjiong123441/HumanTyper/releases/latest
+    url: https://github.com/ydnw6/HumanTyper/releases/latest
     about: 提交问题前请先确认在最新版本上仍能复现

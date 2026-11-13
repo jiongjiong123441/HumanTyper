@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        感谢反馈！提交前请先看一下 README 的 [常见问题](https://github.com/jiongjiong123441/HumanTyper#常见问题)，
+        感谢反馈！提交前请先看一下 README 的 [常见问题](https://github.com/ydnw6/HumanTyper#常见问题)，
         例如「完全打不出字」（目标程序以管理员身份运行）、「代码编辑器多出缩进/括号」、「提示不支持读取文本，已跳过核对」等。
 
   - type: input
