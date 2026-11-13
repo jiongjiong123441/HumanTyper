@@ -6,13 +6,13 @@
 
 有快有慢 · 偶尔打错再改 · 打几个词停一下 · 写完一句想一想 · 支持中英文
 
-[![Build & Release](https://github.com/jiongjiong123441/HumanTyper/actions/workflows/build.yml/badge.svg)](https://github.com/jiongjiong123441/HumanTyper/actions/workflows/build.yml)
-[![Latest release](https://img.shields.io/github/v/release/jiongjiong123441/HumanTyper?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/jiongjiong123441/HumanTyper/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/jiongjiong123441/HumanTyper/total?label=%E4%B8%8B%E8%BD%BD)](https://github.com/jiongjiong123441/HumanTyper/releases)
+[![Build & Release](https://github.com/ydnw6/HumanTyper/actions/workflows/build.yml/badge.svg)](https://github.com/ydnw6/HumanTyper/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/ydnw6/HumanTyper?label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/ydnw6/HumanTyper/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/ydnw6/HumanTyper/total?label=%E4%B8%8B%E8%BD%BD)](https://github.com/ydnw6/HumanTyper/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D6)
 
-[**⬇ 下载最新版**](https://github.com/jiongjiong123441/HumanTyper/releases/latest) · [使用方法](#快速上手) · [参数说明](#参数说明) · [常见问题](#常见问题) · [English](#english)
+[**⬇ 下载最新版**](https://github.com/ydnw6/HumanTyper/releases/latest) · [使用方法](#快速上手) · [参数说明](#参数说明) · [常见问题](#常见问题) · [English](#english)
 
 <img src="docs/screenshot.png" alt="HumanTyper 主界面" width="760">
 
@@ -42,7 +42,7 @@ HumanTyper 把一段文字**按人的节奏**敲进任意输入框：节奏忽�
 
 ## 快速上手
 
-1. 到 [Releases](https://github.com/jiongjiong123441/HumanTyper/releases/latest) 下载 `HumanTyper.exe`，双击运行。
+1. 到 [Releases](https://github.com/ydnw6/HumanTyper/releases/latest) 下载 `HumanTyper.exe`，双击运行。
 2. 把要输入的文字粘贴进上方文本框（也可以"打开文件…"，支持 UTF-8 / GBK）。
 3. 开始输入，二选一：
    - 点 **开始**，在倒计时（默认 3 秒）内点一下要输入的位置；
@@ -190,7 +190,7 @@ ToDesk、向日葵、Windows 远程桌面、VNC、虚拟机这类窗口只转发
 需要 [.NET SDK](https://dotnet.microsoft.com/download)（6.0 或更新，用于编译；生成的程序运行在 Windows 自带的 .NET Framework 4.8 上）。
 
 ```bash
-git clone https://github.com/jiongjiong123441/HumanTyper.git
+git clone https://github.com/ydnw6/HumanTyper.git
 cd HumanTyper
 dotnet build HumanTyper.csproj -c Release -o out
 ```
@@ -242,7 +242,7 @@ HumanTyper/
 
 ## 参与贡献
 
-欢迎提 [Issue](https://github.com/jiongjiong123441/HumanTyper/issues) 反馈问题或建议，也欢迎 Pull Request：
+欢迎提 [Issue](https://github.com/ydnw6/HumanTyper/issues) 反馈问题或建议，也欢迎 Pull Request：
 
 1. Fork 本仓库并新建分支；
 2. 修改后本地 `dotnet build` 确认能编译，并在记事本等程序里实际试一下；
@@ -256,7 +256,7 @@ HumanTyper/
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 jiongjiong123441。第三方数据的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+[MIT](LICENSE) © 2026 ydnw6。第三方数据的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ---
 
@@ -264,4 +264,4 @@ HumanTyper/
 
 **HumanTyper** is a small Windows tool that types text into any input box the way a person would: uneven rhythm, occasional typos that get noticed and backspaced, short pauses between words and longer ones between sentences and paragraphs. It supports Chinese (IME-like word-by-word commits) and English. It pauses automatically when you switch windows or move the caret and resumes once the caret is back. After finishing, it reads the text back, diffs it against the source, and fixes any differences using arrow keys, Backspace and retyping. A keyboard mode (scan codes, or the optional Interception driver) sends real key presses so it also works inside remote-desktop / remote-control windows such as ToDesk, Sunlogin, RDP and VMs; Chinese is then typed as pinyin through the remote IME.
 
-Download `HumanTyper.exe` from the [latest release](https://github.com/jiongjiong123441/HumanTyper/releases/latest) (Windows 10/11, no install). Default hotkeys: `F8` start / pause / resume, `F9` stop, `F10` restart. Licensed under [MIT](LICENSE).
+Download `HumanTyper.exe` from the [latest release](https://github.com/ydnw6/HumanTyper/releases/latest) (Windows 10/11, no install). Default hotkeys: `F8` start / pause / resume, `F9` stop, `F10` restart. Licensed under [MIT](LICENSE).
