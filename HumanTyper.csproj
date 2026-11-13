@@ -10,8 +10,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Version>1.1.0</Version>
     <Product>HumanTyper</Product>
-    <Description>拟人自动打字工具</Description>
-    <Copyright>Copyright (c) 2026 jiongjiong123441, MIT License</Copyright>
+    <AssemblyTitle>HumanTyper 拟人自动打字（永久免费开源）</AssemblyTitle>
+    <Description>拟人自动打字工具。永久免费开源，付费购买请退款并举报卖家。https://github.com/ydnw6/HumanTyper</Description>
+    <Copyright>Copyright (c) 2026 ydnw6, MIT License — 永久免费</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>

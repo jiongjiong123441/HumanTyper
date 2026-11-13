@@ -87,6 +87,7 @@ namespace HumanTyper
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
                 var sb = new StringBuilder();
+                sb.AppendLine("; HumanTyper 设置文件 — " + FreeNotice.OneLine + "。" + FreeNotice.RepoUrl);   // (no '=' sign: skipped when loading)
                 foreach (var f in typeof(Settings).GetFields(BindingFlags.Public | BindingFlags.Instance))
                 {
                     object v = f.GetValue(this);

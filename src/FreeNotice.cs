@@ -15,6 +15,10 @@ namespace HumanTyper
         public const string RepoUrl = "https://github.com/ydnw6/HumanTyper";
         public const string IssuesUrl = RepoUrl + "/issues";
         public const string QQ = "959649446";
+        public const string Owner = "ydnw6";
+        public const string CopyrightLine = "© 2026 " + Owner;
+        /// <summary>The one-sentence version, shown in the footer, title, status bar, overlay and settings file.</summary>
+        public const string OneLine = "本软件永久免费开源，付费购买请退款并举报卖家";
 
         private readonly CheckBox _chkHide;
 
