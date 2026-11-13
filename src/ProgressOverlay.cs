@@ -37,19 +37,19 @@ namespace HumanTyper
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             DoubleBuffered = true;
-            BackColor = Color.FromArgb(28, 30, 36);
+            BackColor = Bg;
             Opacity = 0.94;
             Text = "HumanTyper 进度";
 
             using (var g = CreateGraphics()) _k = g.DpiX / 96f;
-            ClientSize = new Size((int)(620 * _k), (int)(118 * _k));
-            _fState = new Font("Microsoft YaHei UI", 10f, FontStyle.Bold);
-            _fPct = new Font("Segoe UI", 20f, FontStyle.Bold);
+            ClientSize = new Size((int)(620 * _k), (int)(128 * _k));
+            _fState = new Font("Microsoft YaHei UI", 10f);
+            _fPct = new Font("Microsoft YaHei UI", 13f);
             _fStrip = new Font("Microsoft YaHei UI", 14f);
-            _fCur = new Font("Microsoft YaHei UI", 14f, FontStyle.Bold);
+            _fCur = _fStrip;
             _fSmall = new Font("Microsoft YaHei UI", 8.5f);
 
-            var rgn = RoundRect(new Rectangle(Point.Empty, ClientSize), (int)(10 * _k));
+            var rgn = RoundRect(new Rectangle(Point.Empty, ClientSize), (int)(12 * _k));
             Region = new Region(rgn);
         }
 
@@ -126,12 +126,28 @@ namespace HumanTyper
         }
 
         // ------------------------------------------------------------------ painting
+        //
+        // Layout on a 4px grid (logical pixels, scaled by _k):
+        //   12–32  state · message …………………… percentage  ×
+        //   40–46  progress bar
+        //   52–92  teleprompter line, current character at a fixed reading point
+        //   100–116 counts · speed …………………… HumanTyper · 永久免费
+        // Colour: one graphite ramp; the state colour appears only on the dot, the bar and
+        // the current-character block.
+
+        private static readonly Color Bg = Color.FromArgb(27, 28, 32);
+        private static readonly Color Track = Color.FromArgb(45, 47, 53);
+        private static readonly Color Hairline = Color.FromArgb(58, 60, 67);
+        private static readonly Color TextPrimary = Color.FromArgb(231, 233, 236);
+        private static readonly Color TextSecondary = Color.FromArgb(163, 167, 175);
+        private static readonly Color TextMuted = Color.FromArgb(111, 115, 123);
+        private static readonly Color OnAccent = Color.FromArgb(18, 19, 22);
 
         private Color Accent =>
-            _state == EngineState.Paused ? Color.FromArgb(255, 183, 77) :
-            _state == EngineState.Finished ? Color.FromArgb(100, 181, 246) :
-            _state == EngineState.Stopped ? Color.FromArgb(239, 83, 80) :
-            Color.FromArgb(102, 210, 120);
+            _state == EngineState.Paused ? Color.FromArgb(240, 178, 72) :
+            _state == EngineState.Finished ? Color.FromArgb(98, 166, 232) :
+            _state == EngineState.Stopped ? Color.FromArgb(229, 98, 92) :
+            Color.FromArgb(88, 196, 120);
 
         private string StateText =>
             _state == EngineState.Paused ? "已暂停" :
@@ -139,110 +155,120 @@ namespace HumanTyper
             _state == EngineState.Finished ? "完成" :
             _state == EngineState.Stopped ? "已停止" : "正在输入";
 
+        private int S(double v) => (int)Math.Round(v * _k);
+
+        private const TextFormatFlags Line = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine |
+                                            TextFormatFlags.NoPrefix | TextFormatFlags.VerticalCenter;
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
-            int W = ClientSize.Width, pad = (int)(14 * _k);
-            Color dim = Color.FromArgb(120, 126, 138), text = Color.FromArgb(235, 238, 243);
+            int W = ClientSize.Width, H = ClientSize.Height, pad = S(16);
             double frac = _total > 0 ? Math.Min(1.0, (double)_done / _total) : 0;
 
-            // accent stripe on the left
-            using (var b = new SolidBrush(Accent)) g.FillRectangle(b, 0, 0, (int)(5 * _k), ClientSize.Height);
+            // hairline edge instead of a coloured stripe
+            using (var path = RoundRect(new Rectangle(0, 0, W - 1, H - 1), S(12)))
+            using (var p = new Pen(Hairline, 1f)) g.DrawPath(p, path);
 
-            // row 1: state + message, percentage on the right
-            string pct = $"{frac * 100:0}%";
-            var pctSize = TextRenderer.MeasureText(g, pct, _fPct, Size.Empty, TextFormatFlags.NoPadding);
-            int closeW = (int)(22 * _k);
-            _closeRect = new Rectangle(W - closeW - (int)(4 * _k), (int)(4 * _k), closeW, closeW);
-            int pctX = _closeRect.Left - (int)(4 * _k) - pctSize.Width;
-            TextRenderer.DrawText(g, pct, _fPct, new Point(pctX, (int)(6 * _k)), Accent, TextFormatFlags.NoPadding);
-
-            int y1 = (int)(10 * _k);
-            int dot = (int)(10 * _k);
-            using (var b = new SolidBrush(Accent)) g.FillEllipse(b, pad, y1 + (int)(4 * _k), dot, dot);
+            // ---- row 1: dot · state · message …… percentage ×
+            var row1 = new Rectangle(pad, S(12), W - 2 * pad, S(20));
+            _closeRect = new Rectangle(W - S(12) - S(24), S(10), S(24), S(24));
+            using (var b = new SolidBrush(Accent))
+                g.FillEllipse(b, row1.X, row1.Y + (row1.Height - S(8)) / 2, S(8), S(8));
+            int x = row1.X + S(16);
             string st = StateText;
-            int sx = pad + dot + (int)(6 * _k);
-            TextRenderer.DrawText(g, st, _fState, new Point(sx, y1), text, TextFormatFlags.NoPadding);
-            int stW = TextRenderer.MeasureText(g, st, _fState, Size.Empty, TextFormatFlags.NoPadding).Width;
-            string msg = ShortMessage(_msg);
-            if (msg.Length > 0)
-                TextRenderer.DrawText(g, msg, _fSmall, new Rectangle(sx + stW + (int)(8 * _k), y1 + (int)(2 * _k), pctX - sx - stW - (int)(16 * _k), (int)(20 * _k)),
-                    dim, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+            int stW = TextRenderer.MeasureText(g, st, _fState, Size.Empty, Line).Width;
+            TextRenderer.DrawText(g, st, _fState, new Rectangle(x, row1.Y, stW + S(4), row1.Height), TextPrimary, Line);
 
-            // × button
-            using (var p = new Pen(dim, 1.6f * _k))
+            string pct = $"{frac * 100:0}%";
+            int pctW = TextRenderer.MeasureText(g, pct, _fPct, Size.Empty, Line).Width;
+            int pctX = _closeRect.Left - S(8) - pctW;
+            TextRenderer.DrawText(g, pct, _fPct, new Rectangle(pctX, row1.Y - S(2), pctW + S(4), row1.Height + S(4)), TextPrimary, Line);
+
+            string msg = ShortMessage(_msg);
+            int msgX = x + stW + S(8);
+            if (msg.Length > 0 && pctX - S(12) > msgX)
+                TextRenderer.DrawText(g, msg, _fSmall, new Rectangle(msgX, row1.Y, pctX - S(12) - msgX, row1.Height),
+                    TextSecondary, Line | TextFormatFlags.EndEllipsis);
+
+            using (var p = new Pen(TextMuted, 1.5f * _k))
             {
-                int m = (int)(7 * _k);
+                int m = S(8);
                 g.DrawLine(p, _closeRect.Left + m, _closeRect.Top + m, _closeRect.Right - m, _closeRect.Bottom - m);
                 g.DrawLine(p, _closeRect.Right - m, _closeRect.Top + m, _closeRect.Left + m, _closeRect.Bottom - m);
             }
 
-            // row 2: thick progress bar
-            int barY = (int)(42 * _k), barH = (int)(10 * _k);
-            var track = new Rectangle(pad, barY, W - 2 * pad, barH);
-            using (var path = RoundRect(track, barH / 2))
-            using (var b = new SolidBrush(Color.FromArgb(55, 59, 68))) g.FillPath(b, path);
+            // ---- row 2: progress bar
+            var track = new Rectangle(pad, S(40), W - 2 * pad, S(6));
+            using (var path = RoundRect(track, track.Height / 2))
+            using (var b = new SolidBrush(Track)) g.FillPath(b, path);
             int fillW = (int)Math.Round(track.Width * frac);
             if (fillW > 0)
             {
-                var fill = new Rectangle(track.X, track.Y, Math.Max(barH, fillW), barH);
-                using (var path = RoundRect(fill, barH / 2))
+                using (var path = RoundRect(new Rectangle(track.X, track.Y, Math.Max(track.Height, fillW), track.Height), track.Height / 2))
                 using (var b = new SolidBrush(Accent)) g.FillPath(b, path);
             }
 
-            // row 3: teleprompter strip — done text (dim) | current char (highlighted) | next text
-            int stripY = (int)(60 * _k), stripH = (int)(32 * _k);
-            var strip = new Rectangle(pad, stripY, W - 2 * pad, stripH);
-            DrawStrip(g, strip, dim, text);
+            // ---- row 3: teleprompter line
+            DrawStrip(g, new Rectangle(pad, S(52), W - 2 * pad, S(40)));
 
-            // row 4: numbers
-            string counts = $"{Math.Min(_done, _total)} / {_total} 字符" + (_stats.Length > 0 ? "  ·  " + _stats : "");
-            TextRenderer.DrawText(g, counts, _fSmall, new Point(pad, (int)(96 * _k)), dim, TextFormatFlags.NoPadding);
+            // ---- row 4: numbers …… brand
+            var row4 = new Rectangle(pad, S(100), W - 2 * pad, S(16));
             string brand = "HumanTyper · 永久免费";
-            int brandW = TextRenderer.MeasureText(g, brand, _fSmall, Size.Empty, TextFormatFlags.NoPadding).Width;
-            TextRenderer.DrawText(g, brand, _fSmall, new Point(W - pad - brandW, (int)(96 * _k)), Color.FromArgb(90, 96, 108), TextFormatFlags.NoPadding);
+            int brandW = TextRenderer.MeasureText(g, brand, _fSmall, Size.Empty, Line).Width;
+            TextRenderer.DrawText(g, brand, _fSmall, new Rectangle(row4.Right - brandW, row4.Y, brandW + S(2), row4.Height), TextMuted, Line);
+            string counts = $"{Math.Min(_done, _total)} / {_total} 字符" + (_stats.Length > 0 ? "  ·  " + _stats : "");
+            TextRenderer.DrawText(g, counts, _fSmall, new Rectangle(row4.X, row4.Y, row4.Width - brandW - S(16), row4.Height),
+                TextSecondary, Line | TextFormatFlags.EndEllipsis);
         }
 
-        private void DrawStrip(Graphics g, Rectangle r, Color dim, Color text)
+        /// <summary>
+        /// Done text (muted) runs up to a fixed reading point, the character being typed sits in
+        /// the accent block there, the upcoming text follows in primary. Both ends fade out.
+        /// </summary>
+        private void DrawStrip(Graphics g, Rectangle r)
         {
-            var flags = TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
             var state = g.Save();
             g.SetClip(r);
             int cur = Math.Min(_done, _units.Count);
-            int midX = r.X + (int)(r.Width * 0.38);
-            int baseY = r.Y + (int)(3 * _k);
+            int readX = r.X + (int)(r.Width * 0.36);
 
-            // current character in a box
+            // one font for all three parts, so they share a baseline
+            // text is centred in the full strip height, so descenders and CJK glyphs never clip
+            var textBand = r;
+
             string curText = cur < _units.Count ? Show(_units[cur]) : (_total > 0 ? "✓" : "");
-            int curW = 0;
+            int boxW = 0;
             if (curText.Length > 0)
             {
-                var cs = TextRenderer.MeasureText(g, curText, _fCur, Size.Empty, flags);
-                curW = cs.Width + (int)(8 * _k);
-                var box = new Rectangle(midX, r.Y, curW, r.Height);
-                using (var path = RoundRect(box, (int)(5 * _k)))
+                int glyphW = TextRenderer.MeasureText(g, curText, _fStrip, Size.Empty, Line).Width;
+                boxW = Math.Max(S(20), glyphW + S(8));
+                var box = new Rectangle(readX, r.Y + S(2), boxW, r.Height - S(4));
+                using (var path = RoundRect(box, S(6)))
                 using (var b = new SolidBrush(Accent)) g.FillPath(b, path);
-                TextRenderer.DrawText(g, curText, _fCur, new Point(midX + (int)(4 * _k), baseY), Color.FromArgb(20, 22, 26), flags);
+                TextRenderer.DrawText(g, curText, _fStrip, new Rectangle(box.X, textBand.Y, box.Width, textBand.Height),
+                    OnAccent, Line | TextFormatFlags.HorizontalCenter);
             }
 
-            // what's done: right-aligned up to the box
             var before = new System.Text.StringBuilder();
             for (int i = cur - 1; i >= 0 && before.Length < 60; i--) before.Insert(0, Show(_units[i]));
             string bs = before.ToString();
-            int bw = TextRenderer.MeasureText(g, bs, _fStrip, Size.Empty, flags).Width;
-            TextRenderer.DrawText(g, bs, _fStrip, new Point(midX - (int)(2 * _k) - bw, baseY), dim, flags);
+            // right-aligned inside the strip: GDI text clips to its rectangle, not to g.Clip
+            TextRenderer.DrawText(g, bs, _fStrip, new Rectangle(r.X, textBand.Y, Math.Max(0, readX - S(2) - r.X), textBand.Height), TextMuted, Line | TextFormatFlags.Right);
 
-            // what's next
             var after = new System.Text.StringBuilder();
             for (int i = cur + 1; i < _units.Count && after.Length < 90; i++) after.Append(Show(_units[i]));
-            TextRenderer.DrawText(g, after.ToString(), _fStrip, new Point(midX + curW + (int)(2 * _k), baseY), text, flags);
+            int ax = readX + boxW + S(2);
+            TextRenderer.DrawText(g, after.ToString(), _fStrip, new Rectangle(ax, textBand.Y, Math.Max(0, r.Right - ax), textBand.Height), TextPrimary, Line);
 
-            // fade the left edge so the done text trails off
-            var fadeR = new Rectangle(r.X, r.Y, (int)(60 * _k), r.Height);
-            using (var lg = new LinearGradientBrush(fadeR, BackColor, Color.FromArgb(0, BackColor), LinearGradientMode.Horizontal))
-                g.FillRectangle(lg, fadeR);
+            // fade both ends into the panel
+            int fw = S(40);
+            var left = new Rectangle(r.X - 1, r.Y, fw, r.Height);
+            using (var lg = new LinearGradientBrush(left, Bg, Color.FromArgb(0, Bg), LinearGradientMode.Horizontal)) g.FillRectangle(lg, left);
+            var right = new Rectangle(r.Right - fw + 1, r.Y, fw, r.Height);
+            using (var lg = new LinearGradientBrush(right, Color.FromArgb(0, Bg), Bg, LinearGradientMode.Horizontal)) g.FillRectangle(lg, right);
             g.Restore(state);
         }
 
@@ -273,7 +299,7 @@ namespace HumanTyper
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { _fState.Dispose(); _fPct.Dispose(); _fStrip.Dispose(); _fCur.Dispose(); _fSmall.Dispose(); }
+            if (disposing) { _fState.Dispose(); _fPct.Dispose(); _fStrip.Dispose(); _fSmall.Dispose(); }
             base.Dispose(disposing);
         }
     }
