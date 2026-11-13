@@ -278,7 +278,7 @@ namespace HumanTyper
             };
             root.Controls.Add(_lblStatus, 0, 3);
 
-            // ---- footer: copyright + the free notice in one line
+            // ---- footer: copyright (links to the repository) + QQ
             var footer = new LinkLabel
             {
                 AutoSize = true,
@@ -288,12 +288,10 @@ namespace HumanTyper
                 LinkColor = SystemColors.GrayText,
                 ActiveLinkColor = SystemColors.HotTrack,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Text = $"{FreeNotice.CopyrightLine} · MIT 开源 · {FreeNotice.OneLine} · github.com/ydnw6/HumanTyper · QQ {FreeNotice.QQ}",
+                Text = $"{FreeNotice.CopyrightLine} · QQ {FreeNotice.QQ}",
             };
             footer.Links.Clear();
             footer.Links.Add(0, FreeNotice.CopyrightLine.Length, FreeNotice.RepoUrl);
-            footer.Links.Add(footer.Text.IndexOf(FreeNotice.OneLine), FreeNotice.OneLine.Length, "notice");
-            footer.Links.Add(footer.Text.IndexOf("github.com"), "github.com/ydnw6/HumanTyper".Length, FreeNotice.RepoUrl);
             footer.LinkClicked += (s, e) =>
             {
                 if ((string)e.Link.LinkData == "notice") ShowFreeNotice(false);
