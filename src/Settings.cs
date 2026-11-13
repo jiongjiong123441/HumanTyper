@@ -40,6 +40,7 @@ namespace HumanTyper
         public bool MinimizeOnStart = false;
         public bool TopMost = false;
         public bool ShowOverlay = true;        // 打字时显示进度悬浮窗
+        public int NoticeHiddenVersion = 0;    // 免费声明在这个版本不再自动弹出
         public int OverlayX = -99999, OverlayY = -99999;   // 悬浮窗位置（-99999 = 默认位置）
         public Keys StartPauseKey = Keys.F8;
         public Keys StopKey = Keys.F9;
