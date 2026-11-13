@@ -278,7 +278,7 @@ namespace HumanTyper
             };
             root.Controls.Add(_lblStatus, 0, 3);
 
-            // ---- footer: copyright (links to the repository) + QQ
+            // ---- footer: copyright (links to the repository)
             var footer = new LinkLabel
             {
                 AutoSize = true,
@@ -288,7 +288,7 @@ namespace HumanTyper
                 LinkColor = SystemColors.GrayText,
                 ActiveLinkColor = SystemColors.HotTrack,
                 LinkBehavior = LinkBehavior.HoverUnderline,
-                Text = $"{FreeNotice.CopyrightLine} · QQ {FreeNotice.QQ}",
+                Text = FreeNotice.CopyrightLine,
             };
             footer.Links.Clear();
             footer.Links.Add(0, FreeNotice.CopyrightLine.Length, FreeNotice.RepoUrl);
