@@ -24,7 +24,8 @@
 
 普通的"自动输入"要么一次性粘贴，要么匀速逐字敲出，一眼就能看出不是人打的。
 HumanTyper 把一段文字**按人的节奏**敲进任意输入框：节奏忽快忽慢、手滑打错后退格修正、写到一半停下来想想，中文还会像输入法那样一个词一个词地上屏。打完之后它还会**从头核对一遍**，有遗漏就用键盘把光标移过去改好。
-> **本软件永久免费、开源，没有付费版、会员或激活码。** 如果你是花钱买到的，请立即向卖家所在平台申请退款并举报该卖家。问题反馈：[GitHub Issues](https://github.com/jiongjiong123441/HumanTyper/issues) 或 QQ 959649446。
+
+> **本软件永久免费、开源，没有付费版、会员或激活码。** 如果你是花钱买到的，请立即向卖家所在平台申请退款并举报该卖家。问题反馈：[GitHub Issues](https://github.com/ydnw6/HumanTyper/issues) 或 QQ 959649446。
 
 ## 功能
 
@@ -258,7 +259,7 @@ HumanTyper/
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 ydnw6。第三方数据的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+[MIT](LICENSE) © 2026 ydnw6。本软件永久免费，付费购买请退款并举报卖家。第三方数据的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ---
 

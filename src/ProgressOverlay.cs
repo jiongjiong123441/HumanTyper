@@ -200,6 +200,9 @@ namespace HumanTyper
             // row 4: numbers
             string counts = $"{Math.Min(_done, _total)} / {_total} 字符" + (_stats.Length > 0 ? "  ·  " + _stats : "");
             TextRenderer.DrawText(g, counts, _fSmall, new Point(pad, (int)(96 * _k)), dim, TextFormatFlags.NoPadding);
+            string brand = "HumanTyper · 永久免费";
+            int brandW = TextRenderer.MeasureText(g, brand, _fSmall, Size.Empty, TextFormatFlags.NoPadding).Width;
+            TextRenderer.DrawText(g, brand, _fSmall, new Point(W - pad - brandW, (int)(96 * _k)), Color.FromArgb(90, 96, 108), TextFormatFlags.NoPadding);
         }
 
         private void DrawStrip(Graphics g, Rectangle r, Color dim, Color text)

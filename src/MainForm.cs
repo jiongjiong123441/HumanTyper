@@ -50,7 +50,7 @@ namespace HumanTyper
         {
             _settings = Settings.Load();
             var ver = typeof(MainForm).Assembly.GetName().Version;
-            Text = $"HumanTyper v{ver.Major}.{ver.Minor}.{ver.Build} — 拟人自动打字";
+            Text = $"HumanTyper v{ver.Major}.{ver.Minor}.{ver.Build} — 拟人自动打字（永久免费）";
             Font = new Font("Microsoft YaHei UI", 9F);
             AutoScaleMode = AutoScaleMode.Font;
             StartPosition = FormStartPosition.CenterScreen;
@@ -78,11 +78,12 @@ namespace HumanTyper
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 4,
+                RowCount = 5,
                 Padding = new Padding(10),
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -276,6 +277,27 @@ namespace HumanTyper
                 ForeColor = SystemColors.InfoText,
             };
             root.Controls.Add(_lblStatus, 0, 3);
+
+            // ---- footer: copyright (links to the repository)
+            var footer = new LinkLabel
+            {
+                AutoSize = true,
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 6, 0, 0),
+                ForeColor = SystemColors.GrayText,
+                LinkColor = SystemColors.GrayText,
+                ActiveLinkColor = SystemColors.HotTrack,
+                LinkBehavior = LinkBehavior.HoverUnderline,
+                Text = FreeNotice.CopyrightLine,
+            };
+            footer.Links.Clear();
+            footer.Links.Add(0, FreeNotice.CopyrightLine.Length, FreeNotice.RepoUrl);
+            footer.LinkClicked += (s, e) =>
+            {
+                if ((string)e.Link.LinkData == "notice") ShowFreeNotice(false);
+                else try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo((string)e.Link.LinkData) { UseShellExecute = true }); } catch { }
+            };
+            root.Controls.Add(footer, 0, 4);
         }
 
         private static GroupBox Group(string text) =>
@@ -521,7 +543,7 @@ namespace HumanTyper
             get
             {
                 var ver = typeof(MainForm).Assembly.GetName().Version;
-                return $"HumanTyper v{ver.Major}.{ver.Minor}.{ver.Build} — 拟人自动打字";
+                return $"HumanTyper v{ver.Major}.{ver.Minor}.{ver.Build} — 拟人自动打字（永久免费）";
             }
         }
 
@@ -875,8 +897,17 @@ namespace HumanTyper
             UnregisterHotKey(Handle, HK_RESTART);
         }
 
+        private const int SC_FREE_NOTICE = 0x1F00, WM_SYSCOMMAND = 0x0112;
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetSystemMenu(IntPtr hwnd, bool revert);
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] private static extern bool AppendMenu(IntPtr menu, uint flags, IntPtr id, string text);
+
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == WM_SYSCOMMAND && (m.WParam.ToInt64() & 0xFFF0) == SC_FREE_NOTICE)
+            {
+                ShowFreeNotice(false);
+                return;
+            }
             if (m.Msg == WM_HOTKEY)
             {
                 ExecuteHotkey(m.WParam.ToInt32());
@@ -932,6 +963,13 @@ namespace HumanTyper
             TopMost = _settings.TopMost;
             RegisterHotkeys();
             _monitor.Install();
+            // title-bar menu (right-click the title / Alt+Space): about + free notice
+            IntPtr sys = GetSystemMenu(Handle, false);
+            if (sys != IntPtr.Zero)
+            {
+                AppendMenu(sys, 0x0800 /* MF_SEPARATOR */, IntPtr.Zero, null);
+                AppendMenu(sys, 0, (IntPtr)SC_FREE_NOTICE, "关于 / 永久免费声明…");
+            }
             if (_lblStatus.Text.Length == 0)
                 SetStatus($"粘贴文本后点“开始”，在倒计时内点击目标输入位置；或先点到目标位置再按 {Settings.KeyName(_settings.StartPauseKey)} 立即开始。"
                           + $"  {Settings.KeyName(_settings.StartPauseKey)} 暂停/继续，{Settings.KeyName(_settings.StopKey)} 停止，{Settings.KeyName(_settings.RestartKey)} 重新开始。");
