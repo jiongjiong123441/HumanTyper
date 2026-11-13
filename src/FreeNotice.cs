@@ -12,7 +12,7 @@ namespace HumanTyper
     /// </summary>
     internal sealed class FreeNotice : Form
     {
-        public const string RepoUrl = "https://github.com/jiongjiong123441/HumanTyper";
+        public const string RepoUrl = "https://github.com/ydnw6/HumanTyper";
         public const string IssuesUrl = RepoUrl + "/issues";
         public const string QQ = "959649446";
 
