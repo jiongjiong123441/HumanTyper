@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HumanTyper 像真人一样打字</title>
+<meta name="description" content="HumanTyper 是一个 Windows 自动输入工具：把一段文字按人的节奏敲进任意输入框，有快有慢，偶尔打错再改，停下来想一想。支持中英文和 ToDesk、向日葵、远程桌面。免费开源。">
+<meta property="og:title" content="HumanTyper 像真人一样打字">
+<meta property="og:description" content="把一段文字按人的节奏敲进任意输入框。免费开源，单文件约 240 KB。">
+<meta property="og:image" content="https://humantyper-ewi.pages.dev/screenshot.png">
+<meta name="theme-color" content="#F7F8F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111714" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='3' width='26' height='26' fill='%23F7F8F3' stroke='%232E7D5B' stroke-width='2.5'/><path d='M10 21l12-10' stroke='%23D2372B' stroke-width='3' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css">
+<style>
+/* World: composition paper (稿纸). The green grid in the hero is the one bright element;
+   chrome around it stays on neutral hairlines. Spacing on a 4px grid. */
+:root{
+  --paper:#F7F8F3; --sheet:#FDFDFB; --raised:#EEF1EA;
+  --grid:#2E7D5B; --grid-soft:rgba(46,125,91,.28);
+  --ink:#1A2420; --ink-2:#46524B; --muted:#5F6B64; --red:#D2372B;
+  --line:rgba(26,36,32,.10); --line-2:rgba(26,36,32,.18);
+  --kai:"LXGW WenKai","KaiTi","STKaiti","Kaiti SC",serif;
+  --sans:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+  --ease:cubic-bezier(.22,1,.36,1);
+}
+@media (prefers-color-scheme: dark){
+  :root{--paper:#111714;--sheet:#151d19;--raised:#1c2621;
+    --grid:#5DB38B;--grid-soft:rgba(93,179,139,.3);
+    --ink:#E6EDE8;--ink-2:#BAC6BF;--muted:#9AA8A0;--red:#FF6B5C;
+    --line:rgba(230,237,232,.10);--line-2:rgba(230,237,232,.18);}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.75 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+a,button,input,.btn{transition:color .15s var(--ease),background-color .15s var(--ease),border-color .15s var(--ease),transform .15s var(--ease)}
+:focus-visible{outline:2px solid var(--grid);outline-offset:3px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 24px}
+[id]{scroll-margin-top:24px}
+
+nav{display:flex;justify-content:space-between;align-items:center;padding:24px 0 8px}
+.brand{font:400 20px/1 var(--kai);text-decoration:none;display:flex;align-items:center;gap:12px}
+.brand i{width:20px;height:20px;border:2px solid var(--grid);position:relative}
+.brand i::after{content:"";position:absolute;inset:7px 2px auto;height:2px;background:var(--red);transform:rotate(-35deg)}
+nav .links{display:flex;align-items:center;gap:24px;font-size:15px;color:var(--muted)}
+nav .links a{text-decoration:none}
+nav .links a:hover{color:var(--ink)}
+nav .links a.nav-dl{display:inline-flex;align-items:center;height:36px;padding:0 16px;border:1px solid var(--line-2);border-radius:8px;color:var(--ink);font-weight:500}
+nav .links a.nav-dl:hover{border-color:var(--ink)}
+
+/* ---------- 稿纸 hero ---------- */
+.hero{padding:40px 0 24px;--cols:10;--cell:min(88px,calc((100vw - 48px) / var(--cols)))}
+.end .sheet{--cols:8;--cell:min(88px,calc((100vw - 48px) / var(--cols)))}
+.sheet{position:relative;width:calc(var(--cell) * var(--cols));margin:0 auto}
+.row{display:grid;grid-template-columns:repeat(var(--cols),var(--cell));border-top:1.5px solid var(--grid);border-bottom:1.5px solid var(--grid);margin-top:calc(var(--cell) * .42);background:var(--sheet)}
+.row:first-child{margin-top:calc(var(--cell) * .3)}
+.cell{position:relative;height:var(--cell);border-left:1px solid var(--grid-soft);display:grid;place-items:center;font:calc(var(--cell) * .62)/1 var(--kai);color:var(--ink)}
+.cell:first-child{border-left:1.5px solid var(--grid)}
+.cell:last-child{border-right:1.5px solid var(--grid)}
+.cell.cur::after{content:"";position:absolute;left:22%;right:22%;bottom:14%;height:2px;background:var(--grid);animation:blink 1s steps(1) infinite}
+.typing .cell.cur::after{animation:none}
+@keyframes blink{50%{opacity:0}}
+.cell.bad{color:var(--red)}
+.cell.bad::before{content:"";position:absolute;left:12%;right:12%;top:50%;height:2px;background:var(--red);transform:rotate(-14deg)}
+.py{position:absolute;bottom:calc(100% + 4px);left:0;white-space:nowrap;font:500 calc(var(--cell) * .2)/1 var(--sans);color:var(--grid);letter-spacing:.02em;border-bottom:1.5px dotted var(--grid);padding-bottom:2px}
+.cand{position:absolute;top:calc(100% + 8px);left:0;z-index:2;display:flex;gap:4px;padding:4px;background:var(--sheet);border:1px solid var(--line-2);border-radius:8px;box-shadow:0 8px 24px rgba(26,36,32,.12);font:calc(max(var(--cell),48px) * .26)/1 var(--sans);white-space:nowrap}
+.cand span{padding:4px 8px;border-radius:4px;color:var(--ink)}
+.cand span b{font-weight:400;color:var(--muted);margin-right:4px;font-size:.8em}
+.cand span.on{background:var(--grid);color:var(--sheet)}
+.cand span.on b{color:inherit}
+
+.rhythm{width:calc(var(--cell) * var(--cols));margin:32px auto 0;display:grid;grid-template-columns:auto 1fr 9em;gap:16px;align-items:center;font-size:13px;color:var(--muted)}
+#stat{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.track{position:relative;height:32px;border-bottom:1px solid var(--line-2);overflow:hidden}
+.ticks{position:absolute;left:0;bottom:0;display:flex;align-items:flex-end;height:100%;transition:transform .2s var(--ease)}
+.ticks i{flex:none;width:2px;background:var(--grid);margin-left:var(--gap)}
+.ticks i.bk{background:var(--red)}
+.ticks i.ps{background:transparent;border-left:2px dotted var(--muted);width:0}
+
+.try{display:flex;gap:8px;width:calc(var(--cell) * var(--cols));margin:24px auto 0}
+.try input{flex:1;min-width:0;height:48px;padding:0 16px;font:16px var(--sans);border:1px solid var(--line-2);border-radius:8px;background:var(--sheet);color:var(--ink)}
+.try input::placeholder{color:var(--muted)}
+.try input:hover{border-color:var(--muted)}
+.try input:focus{outline:none;border-color:var(--grid);box-shadow:0 0 0 3px var(--grid-soft)}
+.try button{height:48px;padding:0 20px;font:500 15px var(--sans);border:1px solid var(--line-2);border-radius:8px;background:var(--raised);color:var(--ink);cursor:pointer}
+.try button:hover{border-color:var(--ink)}
+.try button:active{transform:scale(.98)}
+
+.intro{display:grid;grid-template-columns:1.25fr 1fr;gap:48px;align-items:end;padding:64px 0 96px}
+h1{font:400 clamp(36px,4.6vw,52px)/1.2 var(--kai);margin:0 0 16px}
+.nb{display:inline-block}
+.lead{margin:0;color:var(--ink-2);font-size:18px;line-height:1.8;max-width:30em}
+.actions{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.btn{display:inline-flex;align-items:center;gap:8px;height:48px;padding:0 20px;font:500 16px/1 var(--sans);text-decoration:none;border:1px solid var(--ink);border-radius:8px;background:var(--ink);color:var(--paper)}
+.btn:hover{background:var(--grid);border-color:var(--grid)}
+.btn:active{transform:scale(.98)}
+.btn.line{background:transparent;color:var(--ink);border-color:var(--line-2)}
+.btn.line:hover{background:transparent;border-color:var(--ink)}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px}
+.small{font-size:14px;color:var(--muted);margin:0}
+#latest{display:block;margin-top:4px;font-variant-numeric:tabular-nums}
+
+/* ---------- sections ---------- */
+section{padding:96px 0}
+h2{font:400 clamp(28px,3.2vw,36px)/1.3 var(--kai);margin:0 0 12px;text-wrap:balance}
+h3{font-family:var(--kai);font-weight:400}
+.sec-lead{color:var(--ink-2);margin:0 0 40px;max-width:34em}
+
+.ruled{display:grid;grid-template-columns:1fr 1fr;column-gap:56px;border-top:1px solid var(--line-2)}
+.ruled div{padding:24px 0;border-bottom:1px solid var(--line)}
+.ruled h3{font-size:20px;line-height:1.4;margin:0 0 8px}
+.ruled p{margin:0;color:var(--muted);font-size:15px}
+kbd{font:500 13px/1 var(--sans);padding:2px 6px;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:4px;background:var(--sheet);color:var(--ink)}
+
+figure{margin:0}
+.shot-main img{display:block;width:100%;max-width:880px;height:auto;margin:0 auto;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(26,36,32,.08)}
+figcaption{font-size:13px;color:var(--muted);margin-top:12px;text-align:center}
+.views{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:48px 0 0;padding:0;list-style:none;border-top:1px solid var(--line-2)}
+.views li{padding:24px 24px 24px 0;border-bottom:1px solid var(--line);color:var(--muted);font-size:15px}
+.views li+li{padding-left:24px;border-left:1px solid var(--line)}
+.views li b{display:block;margin-bottom:4px;color:var(--ink);font:400 20px/1.4 var(--kai)}
+.overlay-shot{margin-top:40px}
+.overlay-shot img{display:block;width:100%;max-width:620px;height:auto;margin:0 auto;border-radius:8px}
+
+.keys{display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}
+.keys span{font:500 15px/1 var(--sans);padding:12px 16px 10px;background:var(--sheet);border:1px solid var(--line-2);border-bottom-width:4px;border-radius:6px}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);margin-top:40px;border-top:1px solid var(--line-2)}
+.modes div{padding:24px 24px 24px 0;border-bottom:1px solid var(--line)}
+.modes div+div{padding-left:24px;border-left:1px solid var(--line)}
+.modes h3{margin:0 0 4px;font-size:20px;line-height:1.4}
+.modes p{margin:0;font-size:15px;color:var(--muted)}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:40px;margin:0;padding:0;list-style:none}
+.steps li{display:grid;grid-template-columns:56px 1fr;gap:16px;align-items:start}
+.num{width:56px;height:56px;border:1.5px solid var(--grid);display:grid;place-items:center;font:400 28px/1 var(--kai);color:var(--grid);background:var(--sheet)}
+.steps h3{margin:4px 0;font-size:20px;line-height:1.4}
+.steps p{margin:0;font-size:15px;color:var(--muted)}
+
+.faq{max-width:760px;border-top:1px solid var(--line-2)}
+details{border-bottom:1px solid var(--line)}
+summary{cursor:pointer;list-style:none;padding:20px 0;font-weight:500;display:flex;justify-content:space-between;align-items:center;gap:24px}
+summary:hover{color:var(--grid)}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";flex:none;color:var(--muted);font-size:20px;line-height:1;font-weight:400}
+details[open] summary::after{content:"−"}
+details p{margin:0 0 20px;color:var(--muted);max-width:40em}
+
+.end{padding:96px 0 112px;text-align:center}
+.end .row{margin-top:0}
+.end .cell{font-size:calc(var(--cell) * .5)}
+.end p{color:var(--muted);margin:32px 0 24px}
+.end .btn{margin:0 4px 8px}
+
+@media (max-width:820px){
+  .intro{grid-template-columns:1fr;gap:32px;padding:48px 0 64px}
+  .views,.ruled,.modes,.steps{grid-template-columns:1fr}
+  .views li,.views li+li,.modes div,.modes div+div{padding:20px 0;border-left:0}
+  .steps{gap:24px}
+  nav .links a:not(.nav-dl){display:none}
+  section{padding:64px 0}
+  .end{padding:64px 0 80px}
+  .rhythm{grid-template-columns:1fr auto}.rhythm .lbl{display:none}
+}
+@media (prefers-reduced-motion:reduce){.cell.cur::after{animation:none}.ticks{transition:none}html{scroll-behavior:auto}*{transition:none!important}}
+
+footer{border-top:1px solid var(--line);padding:40px 0 48px;font-size:14px;color:var(--muted)}
+.foot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px 48px;align-items:start}
+.foot-about{display:flex;flex-direction:column;gap:4px}
+.foot-name{font:400 20px/1.2 var(--kai);color:var(--ink)}
+.foot-links{display:flex;flex-wrap:wrap;gap:8px 24px;justify-content:flex-end;align-items:center}
+.foot-links a{text-decoration:none}
+.foot-links a:hover{color:var(--ink)}
+.foot-gh{display:inline-grid;place-items:center;width:36px;height:36px;margin:-8px 0;border-radius:8px;color:var(--ink)}
+.foot-gh:hover{background:var(--raised)}
+.foot-legal{grid-column:1/-1;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px 24px;padding-top:20px;border-top:1px solid var(--line);font-size:13px}
+.foot-legal a{text-underline-offset:3px}
+@media (max-width:820px){.foot{grid-template-columns:1fr}.foot-links{justify-content:flex-start}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="#"><i></i>HumanTyper</a>
+    <div class="links">
+      <a href="#how">怎么打</a>
+      <a href="#remote">远程桌面</a>
+      <a href="#faq">常见问题</a>
+      <a href="https://github.com/ydnw6/HumanTyper">GitHub</a>
+      <a class="nav-dl" href="download.html">下载</a>
+    </div>
+  </nav>
+</div>
+
+<header class="hero">
+  <div class="sheet" id="sheet" role="img" aria-label="演示：在稿纸上逐字打出“像真人一样打字。有快有慢，偶尔打错，停下来想一想。”"></div>
+  <div class="rhythm" id="rhythm" aria-hidden="true">
+    <span class="lbl">按键节奏</span>
+    <div class="track"><div class="ticks" id="ticks"></div></div>
+    <span id="stat"></span>
+  </div>
+  <form class="try" id="try">
+    <input id="tryInput" maxlength="48" placeholder="换一句话，看它怎么打" aria-label="要演示的句子">
+    <button type="submit">打这句</button>
+  </form>
+</header>
+
+<div class="wrap">
+  <div class="intro">
+    <div>
+      <h1><span class="nb">自动输入，</span><span class="nb">但像人在打字</span></h1>
+      <p class="lead">HumanTyper 把一段文字敲进任意输入框，节奏忽快忽慢，手滑了会回删重打，写完一句停下来想想。中文像输入法那样先打拼音再选词，打完还会从头核对一遍。</p>
+    </div>
+    <div class="actions">
+      <div class="btn-row">
+      <a class="btn" href="download.html">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 20h16"/></svg>
+        下载 Windows 版
+      </a>
+      <a class="btn line" href="https://github.com/ydnw6/HumanTyper"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>GitHub 源码</a>
+      </div>
+      <p class="small">适用于 Windows 10 和 11。单文件约 240 KB，双击就能用，免费开源。<span id="latest"></span></p>
+    </div>
+  </div>
+</div>
+
+<section id="how">
+  <div class="wrap">
+    <h2>它怎么打字</h2>
+    <p class="sec-lead">每一项都能在设置里调：速度、节奏波动、错字频率、停顿的频率和时长</p>
+    <div class="ruled">
+      <div><h3>有快有慢</h3><p>速度随机起伏。常见的字母组合打得快，大写和符号慢一些，不会像节拍器一样匀速。</p></div>
+      <div><h3>会打错，也会改</h3><p>按错相邻的键、两个字母打反、选错候选词。有时多打几个字才发现，再退格重打。</p></div>
+      <div><h3>停下来想一想</h3><p>每隔几个词短停一下，每隔几句话停得久一点，换段落时停得更久。</p></div>
+      <div><h3>中英文混着打</h3><p>中文按 1 到 4 个字一个词，先出拼音再整词上屏；英文按每分钟词数计速，也支持 emoji。</p></div>
+      <div><h3>打完从头核对</h3><p>读回输入框里实际的文字逐字比对，用方向键和退格把漏字、多字改好，只动自己打的那一段。</p></div>
+      <div><h3>随时停下</h3><p>切走窗口或挪动光标会自动暂停，回到原处自动接着打。<kbd>F8</kbd> 暂停和继续，<kbd>F9</kbd> 停止，<kbd>F10</kbd> 重打。</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="ui">
+  <div class="wrap">
+    <h2>随时看到打到哪了</h2>
+    <p class="sec-lead">一个窗口管所有设置，改完自动保存。打字时有三个地方显示进度。</p>
+    <figure class="shot-main">
+      <img src="screenshot.png" width="1058" height="847" alt="HumanTyper 主界面：文本框、速度与错字设置、思考停顿设置和控制区" loading="lazy">
+      <figcaption>主界面</figcaption>
+    </figure>
+    <ul class="views">
+      <li><b>文本框</b>已打的部分变绿，正在打的字标黄，自动滚动跟着走。</li>
+      <li><b>悬浮窗</b>置顶显示进度、剩余时间和正在打的那个字，不会出现在截图里。</li>
+      <li><b>任务栏</b>最小化了也能看到进度，暂停时变黄。</li>
+    </ul>
+    <figure class="overlay-shot">
+      <img src="progress-overlay.png" width="775" height="147" alt="进度悬浮窗：状态、进度条和正在打的字" loading="lazy">
+      <figcaption>悬浮窗</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="remote">
+  <div class="wrap">
+    <h2>远控软件里也能打</h2>
+    <p class="sec-lead">远程窗口只转发键盘按键。切到键盘模式后，HumanTyper 发出和实体键盘一样的按键，中文转成拼音，用对方电脑上的输入法一个词一个词地选出来。</p>
+    <div class="keys" aria-label="支持的远程环境">
+      <span>ToDesk</span><span>向日葵</span><span>Windows 远程桌面</span><span>VNC</span><span>虚拟机</span>
+    </div>
+    <div class="modes">
+      <div><h3>标准</h3><p>直接发送字符，中文直接上屏。适合本机程序。</p></div>
+      <div><h3>键盘扫描码</h3><p>和实体键盘相同的按键信号，适合远程窗口，不用装任何东西。</p></div>
+      <div><h3>驱动级虚拟键盘</h3><p>通过 Interception 驱动发出按键，给少数屏蔽软件按键的程序用。可一键安装和卸载。</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>三步开始</h2>
+    <p class="sec-lead">不用安装，不用配置</p>
+    <ol class="steps">
+      <li><span class="num">一</span><div><h3>下载运行</h3><p>从 GitHub 下载 HumanTyper.exe，双击打开。</p></div></li>
+      <li><span class="num">二</span><div><h3>粘贴文字</h3><p>把要输入的内容贴进文本框，也可以打开 UTF-8 或 GBK 的文本文件。</p></div></li>
+      <li><span class="num">三</span><div><h3>按 F8</h3><p>先把光标放到要输入的位置，按 F8 马上开始。也可以点“开始”，在倒计时内点一下目标位置。</p></div></li>
+    </ol>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <h2>常见问题</h2>
+    <div class="faq">
+      <details><summary>中文输入法开着会不会打乱？</summary><p>标准模式不会，文字直接发送，不经过输入法。键盘模式正是借助输入法打中文，需要把目标电脑切到中文输入法。</p></details>
+      <details><summary>在 ToDesk 或向日葵里打不出字？</summary><p>把“输入方式”改为“键盘扫描码”。如果中文变成了拼音字母，说明对方电脑没在用中文输入法，或者处于英文模式。还不行可以试试“驱动级虚拟键盘”。</p></details>
+      <details><summary>在某个程序里完全打不出字？</summary><p>目标程序以管理员身份运行时，Windows 会拦下普通程序发给它的按键。右键 HumanTyper，选“以管理员身份运行”。</p></details>
+      <details><summary>聊天软件里一换行就发出去了？</summary><p>在“控制”里把换行方式改成 <kbd>Shift+Enter</kbd>。</p></details>
+      <details><summary>收费吗？</summary><p>免费，MIT 协议开源。驱动级模式用到的 Interception 驱动只对非商业用途免费，HumanTyper 本身不附带这个驱动。</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="end">
+  <div class="sheet" id="endSheet" aria-hidden="true"></div>
+  <div class="wrap">
+    <p>单文件约 240 KB，不用安装</p>
+    <a class="btn" href="download.html">下载 Windows 版</a>
+    <a class="btn line" href="https://github.com/ydnw6/HumanTyper#readme">阅读使用说明</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div class="foot-about">
+      <span class="foot-name">HumanTyper</span>
+      <span>像真人一样打字的 Windows 自动输入工具</span>
+    </div>
+    <nav class="foot-links" aria-label="项目链接">
+      <a class="foot-gh" href="https://github.com/ydnw6/HumanTyper" aria-label="GitHub" title="GitHub"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg></a>
+      <a href="https://github.com/ydnw6/HumanTyper/releases">全部版本</a>
+      <a href="https://github.com/ydnw6/HumanTyper/issues">反馈问题</a>
+      <a href="https://github.com/ydnw6/HumanTyper#readme">使用说明</a>
+    </nav>
+    <div class="foot-legal">
+      <span>© 2026 ydnw6，以 <a href="https://github.com/ydnw6/HumanTyper/blob/main/LICENSE">MIT 协议</a>开源</span>
+      <span>请合理使用，遵守所在平台的规则</span>
+    </div>
+  </div>
+</footer>
+
+<script src="date.js"></script>
+<script>
+(function(){
+  var COLS=10, sheet=document.getElementById('sheet'), ticks=document.getElementById('ticks'),
+      stat=document.getElementById('stat'), track=ticks.parentNode;
+  var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // closing sheet: one static row
+  (function(){var e=document.getElementById('endSheet'),r=document.createElement('div');r.className='row';
+    '　　双击就能用。'.split('').forEach(function(c){var d=document.createElement('div');d.className='cell';d.textContent=c==='　'?'':c;r.appendChild(d);});e.appendChild(r);})();
+
+  // demo script.
+  // w: [pinyin as the IME shows it, candidate list, index of the right word, index picked by mistake?]
+  // c: punctuation  b: paragraph break (2-cell indent)  p: pause
+  var DEFAULT=[
+    ['b'],['w',"xiang",['想','向','像','相','项'],2],['w',"zhen'ren",['真人','真','针'],0],['w',"yi'yang",['一样','异样','依样'],0],
+    ['w',"da'zi",['大字','打字','搭子'],1,0],['c','。'],['p',1300],
+    ['b'],['w',"you'kuai'you'man",['有快有慢','有快','有'],0],['c','，'],['p',400],['w',"ou'er",['偶尔','偶','欧'],0],['w',"da'cuo",['打错','大错','打'],0],['c','，'],['p',650],
+    ['w',"ting'xia'lai",['停下来','停下','听'],0],['w',"xiang'yi'xiang",['想一想','想','向'],0],['c','。']
+  ];
+  var cells=[], pos=0, token=0, last=0, typed=0;
+
+  function cellCount(script){var n=0;script.forEach(function(s){if(s[0]==='b')n+=2;else if(s[0]==='w')n+=s[2][s[3]].length;else if(s[0]==='c'||s[0]==='k')n+=1;});return n;}
+  function build(script){
+    sheet.innerHTML='';cells=[];
+    var rows=Math.max(3,Math.ceil(cellCount(script)/COLS));
+    for(var r=0;r<rows;r++){var row=document.createElement('div');row.className='row';
+      for(var c=0;c<COLS;c++){var d=document.createElement('div');d.className='cell';row.appendChild(d);cells.push(d);}
+      sheet.appendChild(row);}
+    pos=0;setCur();
+  }
+  function setCur(){cells.forEach(function(c,i){c.classList.toggle('cur',i===pos);});}
+  function clearFloat(){sheet.querySelectorAll('.py,.cand').forEach(function(n){n.remove();});}
+  function wait(ms){var my=token;return new Promise(function(res,rej){setTimeout(function(){my===token?res():rej('cancel');},ms);});}
+  function tick(kind){
+    var now=performance.now(), gap=last?Math.min((now-last)*0.07,140):0; last=now;
+    var i=document.createElement('i');i.style.setProperty('--gap',gap+'px');
+    if(kind==='bk')i.className='bk';
+    i.style.height=(kind==='bk'?60:30+Math.random()*45)+'%';
+    if(gap>60){var p=document.createElement('i');p.className='ps';p.style.height='100%';p.style.setProperty('--gap',(gap/2)+'px');ticks.appendChild(p);i.style.setProperty('--gap',(gap/2)+'px');}
+    ticks.appendChild(i);
+    var over=ticks.scrollWidth-track.clientWidth;ticks.style.transform='translateX('+(over>0?-over:0)+'px)';
+  }
+  function put(ch,cls){var c=cells[pos];if(!c)return;c.textContent=ch;c.className='cell'+(cls?' '+cls:'');pos++;typed++;setCur();tick();}
+  function del(){pos--;var c=cells[pos];c.textContent='';c.className='cell';setCur();tick('bk');}
+  function status(t){stat.textContent=t;}
+
+  // Types the pinyin letter by letter; the apostrophes appear on their own, the way an IME splits syllables.
+  async function compose(py){
+    var host=cells[pos]; if(!host)return null;
+    var el=document.createElement('span');el.className='py';host.appendChild(el);
+    var box=document.createElement('div');box.className='cand';box.hidden=true;host.appendChild(box);
+    for(var i=0;i<py.length;i++){
+      el.textContent+=py[i];
+      if(py[i]==="'")continue;
+      tick();await wait(55+Math.random()*70);
+    }
+    return box;
+  }
+  // Shows the candidate list with the first one highlighted, then moves to the one being picked (as if its number key was pressed).
+  async function pick(box,list,idx){
+    box.innerHTML=list.map(function(w,i){return '<span'+(i===0?' class="on"':'')+'><b>'+(i+1)+'</b>'+w+'</span>';}).join('');
+    box.hidden=false;await wait(280+Math.random()*220);
+    if(idx>0){var s=box.children;s[0].className='';s[idx].className='on';tick();await wait(260);}
+  }
+  async function word(py,list,right,wrong){
+    status('输入拼音');
+    var start=pos, box=await compose(py); if(!box)return;
+    var first=wrong===undefined?right:wrong;
+    await pick(box,list,first);clearFloat();
+    for(var i=0;i<list[first].length;i++)put(list[first][i]);
+    await wait(140+Math.random()*120);
+    if(wrong!==undefined){
+      await wait(300);
+      for(var j=start;j<pos;j++)cells[j].classList.add('bad');
+      status('选错了');await wait(750);
+      status('回删');
+      while(pos>start){del();await wait(90);}
+      await wait(220);status('输入拼音');
+      box=await compose(py);await pick(box,list,right);clearFloat();
+      for(var k=0;k<list[right].length;k++)put(list[right][k]);
+    }
+    status('正在输入');
+    await wait(120+Math.random()*200);
+  }
+  async function plain(ch){
+    // used for visitor sentences: Latin letters may get a neighbouring-key typo
+    var near='qwertyuiopasdfghjklzxcvbnm';
+    if(/[a-z]/i.test(ch)&&Math.random()<0.08&&cells[pos+1]){
+      status('按错了');var j=near.indexOf(ch.toLowerCase());put(near[(j+1)%26],'bad');await wait(380);del();await wait(160);
+    }
+    put(ch);status('正在输入');await wait(/[一-鿿]/.test(ch)?170+Math.random()*260:90+Math.random()*110);
+    if(/[，,。.!！?？]/.test(ch)){status('想一想');await wait(500+Math.random()*700);status('正在输入');}
+  }
+  async function play(script){
+    var my=++token; build(script); ticks.innerHTML='';ticks.style.transform='';last=0;typed=0;
+    sheet.classList.add('typing');status('');
+    try{
+      await wait(250);status('正在输入');
+      for(var s=0;s<script.length;s++){
+        var it=script[s];
+        if(it[0]==='b'){pos+=2;setCur();}
+        else if(it[0]==='w')await word(it[1],it[2],it[3],it[4]);
+        else if(it[0]==='c'){put(it[1]);await wait(200);}
+        else if(it[0]==='k')await plain(it[1]);
+        else if(it[0]==='p'){status('想一想');await wait(it[1]);status('正在输入');}
+      }
+      clearFloat();status('核对中');await wait(1100);
+      sheet.classList.remove('typing');status('打完了，共 '+typed+' 字');
+      await wait(5000);
+      if(my===token)play(script);
+    }catch(e){/* replaced by a newer run */}
+  }
+  function staticRender(script){
+    build(script);
+    script.forEach(function(it){
+      if(it[0]==='b')pos+=2;
+      else if(it[0]==='w')it[2][it[3]].split('').forEach(function(c){cells[pos++].textContent=c;});
+      else if(it[0]==='c'||it[0]==='k')cells[pos++].textContent=it[1];
+    });
+    setCur();status('打完了');
+  }
+
+  // Latest version next to the download button, dated in the visitor's own time zone.
+  fetch('/api/releases').then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(list){
+    if(!list.length)return;
+    document.getElementById('latest').textContent='最新版本 '+list[0].tag+'，'+HTDate.format(list[0].date)+'发布';
+  }).catch(function(){});
+
+  document.getElementById('try').addEventListener('submit',function(e){
+    e.preventDefault();
+    var t=document.getElementById('tryInput').value.trim();if(!t)return;
+    var sc=[['b']];Array.from(t).slice(0,48).forEach(function(ch){sc.push(['k',ch]);});
+    sheet.setAttribute('aria-label','演示：在稿纸上逐字打出“'+t+'”');
+    reduce?staticRender(sc):play(sc);
+  });
+
+  if(reduce){staticRender(DEFAULT);return;}
+  var started=false;
+  function go(){if(!started){started=true;play(DEFAULT);}}
+  if('IntersectionObserver' in window){new IntersectionObserver(function(e){if(e[0].isIntersecting)go();}).observe(sheet);}else go();
+})();
+</script>
+</body>
+</html>
