@@ -259,7 +259,7 @@ HumanTyper/
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 jiongjiong123441。第三方数据的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+[MIT](LICENSE) © 2026 ydnw6。本软件永久免费，付费购买请退款并举报卖家。第三方数据的许可见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
 
 ---
 
