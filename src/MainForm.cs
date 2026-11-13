@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Text;
@@ -20,7 +21,7 @@ namespace HumanTyper
         private bool _counting;
 
         // text
-        private TextBox _txt;
+        private RichTextBox _txt;
         private Label _lblStats;
 
         // speed & typo
@@ -33,7 +34,7 @@ namespace HumanTyper
         private NumericUpDown _numPPMin, _numPPMax;
 
         // control
-        private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof, _chkClipProof, _chkOcrProof;
+        private CheckBox _chkAutoPause, _chkMin, _chkTop, _chkProof, _chkClipProof, _chkOcrProof, _chkOverlay;
         private NumericUpDown _numCountdown;
         private ComboBox _cboNewline, _cboMode, _cboImeState, _cboImeToggle;
         private LinkLabel _lnkDriver;
@@ -92,27 +93,50 @@ namespace HumanTyper
             var textLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
             textLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             textLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            _txt = new TextBox
+            // RichTextBox so typed text can be coloured while typing (plain text only otherwise)
+            _txt = new RichTextBox
             {
                 Multiline = true,
-                ScrollBars = ScrollBars.Vertical,
-                AcceptsReturn = true,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
                 AcceptsTab = true,
                 Dock = DockStyle.Fill,
                 Font = new Font("Microsoft YaHei UI", 10.5F),
-                MaxLength = 0,
+                DetectUrls = false,
+                WordWrap = true,
+                HideSelection = false,
+                BackColor = SystemColors.Window,
+                BorderStyle = BorderStyle.FixedSingle,
             };
-            _txt.TextChanged += (s, e) => UpdateStats();
+            _txt.TextChanged += (s, e) =>
+            {
+                if (_painting) return;
+                if (_hlActive && !_engine.IsBusy) ClearHighlight();   // edited after a run: drop the colouring
+                UpdateStats();
+            };
             _txt.KeyDown += (s, e) =>
             {
                 if (e.Control && e.KeyCode == Keys.A) { _txt.SelectAll(); e.SuppressKeyPress = true; }
+                else if ((e.Control && e.KeyCode == Keys.V) || (e.Shift && e.KeyCode == Keys.Insert))
+                {
+                    PastePlain();
+                    e.SuppressKeyPress = true;
+                }
             };
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("撤销", null, (s, e) => _txt.Undo());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("剪切", null, (s, e) => { if (!_txt.ReadOnly) _txt.Cut(); });
+            menu.Items.Add("复制", null, (s, e) => _txt.Copy());
+            menu.Items.Add("粘贴", null, (s, e) => PastePlain());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("全选", null, (s, e) => _txt.SelectAll());
+            _txt.ContextMenuStrip = menu;
             textLayout.Controls.Add(_txt, 0, 0);
 
             var textBar = Row();
-            var btnPaste = SmallButton("粘贴剪贴板", (s, e) => { if (Clipboard.ContainsText()) _txt.Text = Clipboard.GetText(); });
+            var btnPaste = SmallButton("粘贴剪贴板", (s, e) => { if (!_txt.ReadOnly && Clipboard.ContainsText()) _txt.Text = Clipboard.GetText(); });
             var btnOpen = SmallButton("打开文件…", (s, e) => OpenFile());
-            var btnClear = SmallButton("清空", (s, e) => _txt.Clear());
+            var btnClear = SmallButton("清空", (s, e) => { if (!_txt.ReadOnly) _txt.Clear(); });
             _lblStats = new Label { AutoSize = true, Margin = new Padding(12, 8, 0, 0), ForeColor = SystemColors.GrayText };
             textBar.Controls.AddRange(new Control[] { btnPaste, btnOpen, btnClear, _lblStats });
             textLayout.Controls.Add(textBar, 0, 1);
@@ -175,12 +199,13 @@ namespace HumanTyper
             _chkAutoPause = new CheckBox { Text = "光标离开原位置/窗口时自动暂停，回到原处自动继续", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
             _chkMin = new CheckBox { Text = "开始时最小化本窗口", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
             _chkTop = new CheckBox { Text = "窗口置顶", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
+            _chkOverlay = new CheckBox { Text = "打字时显示进度悬浮窗", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
             _chkTop.CheckedChanged += (s, e) => TopMost = _chkTop.Checked;
 
             tCtl.Controls.Add(Row(Lbl("开始/暂停/继续"), _hkStart, Lbl("   停止"), _hkStop, Lbl("   重新开始"), _hkRestart,
                 Lbl("（点击后按键设置，Del 清除）", true)));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
-            tCtl.Controls.Add(Row(Lbl("倒计时"), _numCountdown, Lbl("秒    换行方式"), _cboNewline, _chkMin, _chkTop));
+            tCtl.Controls.Add(Row(Lbl("倒计时"), _numCountdown, Lbl("秒    换行方式"), _cboNewline, _chkMin, _chkTop, _chkOverlay));
             tCtl.SetFlowBreak(tCtl.Controls[tCtl.Controls.Count - 1], true);
             _chkProof = new CheckBox { Text = "打完后从头核对一遍，有错就用键盘移动光标修改", AutoSize = true, Margin = new Padding(3, 6, 12, 3) };
             _chkClipProof = new CheckBox { Text = "剪贴板复制", AutoSize = true, Margin = new Padding(3, 6, 6, 3) };
@@ -313,7 +338,7 @@ namespace HumanTyper
             _cboImeState.SelectedIndex = s.RemoteImeChinese ? 0 : 1;
             _cboImeToggle.SelectedIndex = s.ImeToggleKey == 1 ? 1 : 0;
             UpdateModeUi();
-            _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkClipProof.Checked = s.ClipboardProofread; _chkOcrProof.Checked = s.OcrProofread; _chkClipProof.Enabled = _chkOcrProof.Enabled = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost;
+            _chkAutoPause.Checked = s.AutoPause; _chkProof.Checked = s.Proofread; _chkClipProof.Checked = s.ClipboardProofread; _chkOcrProof.Checked = s.OcrProofread; _chkClipProof.Enabled = _chkOcrProof.Enabled = s.Proofread; _chkMin.Checked = s.MinimizeOnStart; _chkTop.Checked = s.TopMost; _chkOverlay.Checked = s.ShowOverlay;
             SetNum(_numCountdown, s.Countdown);
             _cboNewline.SelectedIndex = s.NewlineMode == 1 ? 1 : 0;
             _hkStart.Hotkey = s.StartPauseKey; _hkStop.Hotkey = s.StopKey; _hkRestart.Hotkey = s.RestartKey;
@@ -340,7 +365,7 @@ namespace HumanTyper
             s.InputMode = Math.Max(0, _cboMode.SelectedIndex);
             s.RemoteImeChinese = _cboImeState.SelectedIndex != 1;
             s.ImeToggleKey = _cboImeToggle.SelectedIndex == 1 ? 1 : 0;
-            s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.ClipboardProofread = _chkClipProof.Checked; s.OcrProofread = _chkOcrProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked;
+            s.AutoPause = _chkAutoPause.Checked; s.Proofread = _chkProof.Checked; s.ClipboardProofread = _chkClipProof.Checked; s.OcrProofread = _chkOcrProof.Checked; s.MinimizeOnStart = _chkMin.Checked; s.TopMost = _chkTop.Checked; s.ShowOverlay = _chkOverlay.Checked;
             s.Countdown = (int)_numCountdown.Value;
             s.NewlineMode = _cboNewline.SelectedIndex == 1 ? 1 : 0;
             s.StartPauseKey = _hkStart.Hotkey; s.StopKey = _hkStop.Hotkey; s.RestartKey = _hkRestart.Hotkey;
@@ -456,6 +481,190 @@ namespace HumanTyper
             return $"{(int)(sec / 3600)} 小时 {(int)(sec % 3600 / 60)} 分";
         }
 
+        private void PastePlain()
+        {
+            if (_txt.ReadOnly || !Clipboard.ContainsText()) return;
+            _txt.SelectedText = Clipboard.GetText();
+        }
+
+        // ================================================================== typing progress
+        //
+        // Three places show where typing has got to:
+        //   - the text box: typed text gets a green background, the character being typed is amber
+        //     and kept in view;
+        //   - a floating always-on-top panel (ProgressOverlay) that never takes focus;
+        //   - the taskbar button (green bar, yellow when paused) and the window title (percentage).
+
+        private static readonly Color TypedBack = Color.FromArgb(214, 240, 218);
+        private static readonly Color TypedFore = Color.FromArgb(70, 96, 76);
+        private static readonly Color CurrentBack = Color.FromArgb(255, 193, 7);
+
+        private List<string> _runUnits = new List<string>();
+        private int[] _unitOff = { 0 };       // text-box offset of every unit (+ the end)
+        private int _hlEnd;                   // text up to here is coloured as typed
+        private bool _hlActive, _painting;
+        private ProgressOverlay _overlay;
+        private bool _overlayClosed;          // closed with × for this run
+        private readonly System.Diagnostics.Stopwatch _activeWatch = new System.Diagnostics.Stopwatch();
+        private readonly Timer _overlayHideTimer = new Timer { Interval = 3500 };
+        private int _lastDone, _lastTotal;
+        private EngineState _lastState = EngineState.Idle;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, IntPtr l);
+        private const int WM_SETREDRAW = 0x000B;
+
+        private string BaseTitle
+        {
+            get
+            {
+                var ver = typeof(MainForm).Assembly.GetName().Version;
+                return $"HumanTyper v{ver.Major}.{ver.Minor}.{ver.Build} — 拟人自动打字";
+            }
+        }
+
+        /// <summary>Called right before a run starts: remember the units and reset all the displays.</summary>
+        private void BeginProgress(string text)
+        {
+            _runUnits = TypingEngine.Split(text);
+            _unitOff = new int[_runUnits.Count + 1];
+            for (int i = 0; i < _runUnits.Count; i++) _unitOff[i + 1] = _unitOff[i] + _runUnits[i].Length;
+
+            ClearHighlight();
+            _hlActive = true;
+            _txt.ReadOnly = true;
+            _txt.BackColor = SystemColors.Window;
+            _activeWatch.Reset();
+            _lastDone = 0; _lastTotal = _runUnits.Count;
+            _overlayHideTimer.Stop();
+            _overlayClosed = false;
+
+            if (_settings.ShowOverlay)
+            {
+                EnsureOverlay();
+                _overlay.SetText(_runUnits);
+                _overlay.SetState(EngineState.Running, "");
+                _overlay.SetProgress(0, _runUnits.Count, "");
+                if (!_overlay.Visible) _overlay.Show();
+                PlaceOverlay();
+            }
+            else _overlay?.Hide();
+            PaintProgress(0);
+        }
+
+        private void EnsureOverlay()
+        {
+            if (_overlay != null && !_overlay.IsDisposed) return;
+            _overlay = new ProgressOverlay();
+            _overlay.ClosedByUser += () => _overlayClosed = true;
+            _overlay.Moved += p => { _settings.OverlayX = p.X; _settings.OverlayY = p.Y; _settings.Save(); };
+            _overlayHideTimer.Tick += (s, e) => { _overlayHideTimer.Stop(); if (!_engine.IsBusy) _overlay?.Hide(); };
+        }
+
+        /// <summary>Remembered position if it's still on a screen, otherwise top centre of the screen the target is on.</summary>
+        private void PlaceOverlay()
+        {
+            var size = _overlay.Size;
+            var p = new Point(_settings.OverlayX, _settings.OverlayY);
+            bool onScreen = false;
+            foreach (var scr in Screen.AllScreens)
+                if (scr.WorkingArea.Contains(new Rectangle(p, new Size(Math.Min(size.Width, 80), Math.Min(size.Height, 40))))) onScreen = true;
+            if (!onScreen)
+            {
+                var wa = Screen.FromHandle(GetForegroundWindow()).WorkingArea;
+                p = new Point(wa.Left + (wa.Width - size.Width) / 2, wa.Top + (int)(12 * DeviceDpi / 96f));
+            }
+            _overlay.Location = p;
+        }
+
+        /// <summary>Colours the text box: typed part green, current character amber, scrolled into view.</summary>
+        private void PaintProgress(int done)
+        {
+            if (!_hlActive || _unitOff.Length == 0) return;
+            int n = _runUnits.Count;
+            done = Math.Max(0, Math.Min(done, n));
+            int len = _txt.TextLength;
+            int off = Math.Min(_unitOff[done], len);
+
+            _painting = true;
+            SendMessage(_txt.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+            try
+            {
+                if (off < _hlEnd) Format(off, _hlEnd - off + 2, _txt.BackColor, _txt.ForeColor);   // went back (restart)
+                if (off > _hlEnd || _hlEnd == 0) Format(_hlEnd, off - _hlEnd, TypedBack, TypedFore);
+                _hlEnd = off;
+                if (done < n) Format(off, Math.Min(_runUnits[done].Length, len - off), CurrentBack, Color.Black);
+                _txt.Select(off, 0);
+            }
+            finally
+            {
+                SendMessage(_txt.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                _txt.Invalidate();
+                _painting = false;
+            }
+            // keep the current spot visible (only scroll when it has left the view)
+            var pt = _txt.GetPositionFromCharIndex(Math.Min(off, Math.Max(0, len - 1)));
+            int lineH = _txt.Font.Height;
+            if (pt.Y < 0 || pt.Y > _txt.ClientSize.Height - lineH * 2) _txt.ScrollToCaret();
+        }
+
+        private void Format(int start, int length, Color back, Color fore)
+        {
+            if (length <= 0 || start < 0 || start >= _txt.TextLength) return;
+            _txt.Select(start, Math.Min(length, _txt.TextLength - start));
+            _txt.SelectionBackColor = back;
+            _txt.SelectionColor = fore;
+        }
+
+        private void ClearHighlight()
+        {
+            _painting = true;
+            int ss = _txt.SelectionStart, sl = _txt.SelectionLength;
+            SendMessage(_txt.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+            try
+            {
+                _txt.SelectAll();
+                _txt.SelectionBackColor = _txt.BackColor;
+                _txt.SelectionColor = _txt.ForeColor;
+                _txt.Select(ss, sl);
+            }
+            finally
+            {
+                SendMessage(_txt.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                _txt.Invalidate();
+                _painting = false;
+            }
+            _hlEnd = 0;
+            _hlActive = false;
+        }
+
+        /// <summary>"速度 82 字/分 · 剩余约 3 分 12 秒" — from the time actually spent typing (pauses excluded).</summary>
+        private string SpeedText(int done, int total)
+        {
+            double sec = _activeWatch.Elapsed.TotalSeconds;
+            if (done < 5 || sec < 2) return "";
+            double perSec = done / sec;
+            string s = $"速度 {perSec * 60:0} 字/分";
+            if (done < total) s += $"  ·  剩余约 {FormatDuration((total - done) / perSec)}";
+            return s + $"  ·  已用 {FormatDuration(sec)}";
+        }
+
+        private void UpdateProgressDisplays()
+        {
+            int done = _lastDone, total = Math.Max(_lastTotal, 0);
+            string speed = SpeedText(done, total);
+            int pct = total > 0 ? (int)Math.Round(100.0 * Math.Min(done, total) / total) : 0;
+            _lblProgress.Text = $"{done} / {total}（{pct}%）" + (speed.Length > 0 ? "  " + speed.Split('·')[1].Trim() : "");
+            if (_overlay != null && _overlay.Visible) _overlay.SetProgress(done, total, speed);
+
+            bool busy = _engine.IsBusy && _lastState != EngineState.Finished && _lastState != EngineState.Stopped;
+            Text = busy ? $"{pct}% · " + BaseTitle : BaseTitle;
+            TaskbarProgress.Set(Handle,
+                !busy ? TaskbarProgress.State.None :
+                _lastState == EngineState.Paused ? TaskbarProgress.State.Paused : TaskbarProgress.State.Normal,
+                done, total);
+        }
+
         private void OpenFile()
         {
             using (var dlg = new OpenFileDialog { Filter = "文本文件|*.txt;*.md;*.csv;*.log|所有文件|*.*" })
@@ -530,6 +739,7 @@ namespace HumanTyper
             ReadUiToSettings();
             _settings.Save();
             _bar.Value = 0;
+            BeginProgress(text);
             _engine.Start(text, _settings, target);
             SetUiState(EngineState.Running);
         }
@@ -572,14 +782,31 @@ namespace HumanTyper
         {
             SetStatus(msg);
             SetUiState(st);
-            if (st == EngineState.Finished) _bar.Value = _bar.Maximum;
+            _lastState = st;
+            if (st == EngineState.Running || st == EngineState.Thinking) _activeWatch.Start(); else _activeWatch.Stop();
+            if (st == EngineState.Finished) { _bar.Value = _bar.Maximum; _lastDone = _lastTotal; PaintProgress(_runUnits.Count); }
+            if (st == EngineState.Finished || st == EngineState.Stopped)
+            {
+                _txt.ReadOnly = false;
+                _txt.BackColor = SystemColors.Window;
+                _overlayHideTimer.Stop();
+                _overlayHideTimer.Start();          // leave the result up for a moment
+            }
+            if (_overlay != null && !_overlayClosed && _settings.ShowOverlay)
+            {
+                _overlay.SetState(st, msg);
+                if (!_overlay.Visible && st != EngineState.Finished && st != EngineState.Stopped && st != EngineState.Idle) _overlay.Show();
+            }
+            UpdateProgressDisplays();
         }
 
         private void OnProgress(int done, int total)
         {
             _bar.Maximum = Math.Max(1, total);
             _bar.Value = Math.Min(_bar.Maximum, Math.Max(0, done));
-            _lblProgress.Text = $"{done} / {total}";
+            _lastDone = done; _lastTotal = total;
+            PaintProgress(done);
+            UpdateProgressDisplays();
         }
 
         private void SetUiState(EngineState st)
@@ -715,6 +942,7 @@ namespace HumanTyper
             _engine.StopAndWait(1000);
             UnregisterHotkeys();
             _monitor.Dispose();
+            _overlay?.Close();
             base.OnFormClosing(e);
         }
 

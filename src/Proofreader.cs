@@ -251,11 +251,7 @@ namespace HumanTyper
 
             // Something of ours on top of the target (our window shows the source text!)?
             // Then render the target window by itself instead of grabbing the screen.
-            bool covered = false;
-            IntPtr me = System.Diagnostics.Process.GetCurrentProcess().MainWindowHandle;
-            if (me != IntPtr.Zero && IsWindowVisible(me) && !IsIconic(me) && GetWindowRect(me, out RECT mr) &&
-                System.Drawing.Rectangle.FromLTRB(mr.Left, mr.Top, mr.Right, mr.Bottom).IntersectsWith(area))
-                covered = true;
+            bool covered = OwnWindowOverlaps(System.Drawing.Rectangle.FromLTRB(area.Left, area.Top, area.Right, area.Bottom));
 
             Report(EngineState.Thinking, "读不到文本，改用截图识别核对…");
             var wantWords = new List<string>();

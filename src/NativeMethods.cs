@@ -189,6 +189,40 @@ namespace HumanTyper
         public static extern int AccessibleObjectFromWindow(IntPtr hwnd, uint dwObjectID, ref Guid riid,
             [MarshalAs(UnmanagedType.IUnknown)] out object ppvObject);
 
+
+        private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+        [DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
+
+
+        public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+        [DllImport("user32.dll")]
+        public static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowDisplayAffinity(IntPtr hwnd, out uint affinity);
+
+        /// <summary>Windows marked "exclude from capture" don't show up in screenshots at all.</summary>
+        public static bool HiddenFromCapture(IntPtr h) =>
+            GetWindowDisplayAffinity(h, out uint a) && a == WDA_EXCLUDEFROMCAPTURE;
+        /// <summary>
+        /// True if any visible window of ours (main window, progress panel…) covers part of the
+        /// area — screenshots would then show our own text instead of the target's.
+        /// </summary>
+        public static bool OwnWindowOverlaps(System.Drawing.Rectangle area)
+        {
+            uint me = (uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+            bool hit = false;
+            EnumWindows((h, l) =>
+            {
+                GetWindowThreadProcessId(h, out uint pid);
+                if (pid == me && IsWindowVisible(h) && !IsIconic(h) && !HiddenFromCapture(h) && GetWindowRect(h, out RECT r) &&
+                    System.Drawing.Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom).IntersectsWith(area))
+                    hit = true;
+                return !hit;
+            }, IntPtr.Zero);
+            return hit;
+        }
+
         public static bool IsOwnWindow(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero) return false;
